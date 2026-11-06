@@ -17349,6 +17349,45 @@ html[data-admin-theme="light"] .beyonix-admin-main .dispatch-record-row .is-empt
   html[data-admin-theme="light"] .beyonix-admin-main .dispatch-filter-row > :nth-child(4),
   html[data-admin-theme="light"] .beyonix-admin-main .dispatch-filter-row > :nth-child(6) { border-right-color: #cbd5e1 !important; }
 }
+/* TRANSPORTISTA (8.º filtro): escritorio en una fila; debajo de 56rem, dos
+   filas de cuatro (Estado, Tipo, Transportista y Limpiar en la segunda); debajo
+   de 32rem, fecha a lo ancho y el resto de a dos con Limpiar a lo ancho. */
+.beyonix-admin-main .dispatch-filter-row { grid-template-columns: minmax(9rem,1.3fr) repeat(2,minmax(6rem,1fr)) repeat(2,minmax(7.5rem,1.2fr)) minmax(6rem,0.9fr) minmax(8.5rem,1fr) auto; }
+@container (max-width: 55.99rem) {
+  .beyonix-admin-main .dispatch-filter-row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .beyonix-admin-main .dispatch-filter-row > :nth-child(-n + 4) { border-bottom: 1px solid #405166; }
+  .beyonix-admin-main .dispatch-filter-row > :nth-child(4) { border-right: 0 !important; }
+  .beyonix-admin-main .dispatch-filter-row > .dispatch-filter-clear { grid-column: auto; }
+  html[data-admin-theme="light"] .beyonix-admin-main .dispatch-filter-row > :nth-child(-n + 4) { border-bottom-color: #cbd5e1; }
+}
+@container (max-width: 31.99rem) {
+  .beyonix-admin-main .dispatch-filter-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .beyonix-admin-main .dispatch-filter-row > :nth-child(-n + 7) { border-bottom: 1px solid #405166; }
+  .beyonix-admin-main .dispatch-filter-row > .dispatch-filter-date,
+  .beyonix-admin-main .dispatch-filter-row > .dispatch-filter-clear { grid-column: 1 / -1; }
+  .beyonix-admin-main .dispatch-filter-row > :nth-child(1),
+  .beyonix-admin-main .dispatch-filter-row > :nth-child(3),
+  .beyonix-admin-main .dispatch-filter-row > :nth-child(5),
+  .beyonix-admin-main .dispatch-filter-row > :nth-child(7) { border-right: 0 !important; }
+  .beyonix-admin-main .dispatch-filter-row > :nth-child(2),
+  .beyonix-admin-main .dispatch-filter-row > :nth-child(4),
+  .beyonix-admin-main .dispatch-filter-row > :nth-child(6) { border-right: 1px solid #405166 !important; }
+  html[data-admin-theme="light"] .beyonix-admin-main .dispatch-filter-row > :nth-child(-n + 7) { border-bottom-color: #cbd5e1; }
+  html[data-admin-theme="light"] .beyonix-admin-main .dispatch-filter-row > :nth-child(2),
+  html[data-admin-theme="light"] .beyonix-admin-main .dispatch-filter-row > :nth-child(4),
+  html[data-admin-theme="light"] .beyonix-admin-main .dispatch-filter-row > :nth-child(6) { border-right-color: #cbd5e1 !important; }
+}
+/* Pedido Envío BEYONIX en la tabla única: marca discreta junto al N° de pedido. */
+.beyonix-admin-main .dispatch-carrier-tag { display: inline-block; margin-left: 0.4rem; padding: 0.05rem 0.35rem; border: 1px solid rgba(110, 168, 255, 0.45); border-radius: 0.3rem; color: #bfe4ff; font-size: 0.625rem; font-weight: 800; letter-spacing: 0.04em; line-height: 1.3; vertical-align: 0.08em; }
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-carrier-tag { border-color: #9fb8d6; color: #112a43; background: #eef3f8; }
+/* Entregas locales: badges con tono también en dark (la regla global de
+   tracking-widest los deja grises; mismo criterio que .dispatch-state-badge). */
+html:not([data-admin-theme="light"]) .beyonix-admin-main .local-delivery-badge[data-tone="warning"] { color: #F5C15A !important; }
+html:not([data-admin-theme="light"]) .beyonix-admin-main .local-delivery-badge[data-tone="success"] { color: #7DFFBF !important; }
+html:not([data-admin-theme="light"]) .beyonix-admin-main .local-delivery-badge[data-tone="info"] { color: #BFE4FF !important; }
+html:not([data-admin-theme="light"]) .beyonix-admin-main .local-delivery-badge[data-tone="danger"] { color: #FFB4BD !important; }
+html:not([data-admin-theme="light"]) .beyonix-admin-main .local-delivery-badge[data-tone="neutral"] { color: #cbd5e1 !important; }
+.beyonix-admin-main .local-delivery-badge { padding: 0.2rem 0.5rem; letter-spacing: 0.06em; }
 @media (max-width: 639px) {
   .beyonix-admin-main .dispatch-records-scroll { overflow-x: visible; }
   .beyonix-admin-main .dispatch-records-table { min-width: 0; }

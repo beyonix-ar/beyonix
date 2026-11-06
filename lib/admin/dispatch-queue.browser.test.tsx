@@ -19,7 +19,7 @@ function contrast(color: string, backgrounds: string[]) {
 }
 
 const record = (value: Partial<DispatchRecord> & Pick<DispatchRecord, "kind" | "id" | "state">): DispatchRecord =>
-  ({ code: null, displayNumber: null, at: "2026-10-22T16:54:00Z", actorId: "u", actorName: "María José Peña", units: 3, total: 50000, orderCount: 1, selectable: false, ...value })
+  ({ code: null, displayNumber: null, carrier: "andreani", at: "2026-10-22T16:54:00Z", actorId: "u", actorName: "María José Peña", units: 3, total: 50000, orderCount: 1, selectable: false, ...value })
 
 test("Despachos: tabla única, filtros y picking a 390/430/768/1024/1280/1440 px en light/dark", async () => {
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://dispatch-queue.invalid"
@@ -95,19 +95,24 @@ test("Despachos: tabla única, filtros y picking a 390/430/768/1024/1280/1440 px
         const [check, code] = await Promise.all([tableRows.nth(1).locator("input[type=checkbox]").boundingBox(), tableRows.nth(1).locator(".dispatch-record-order").boundingBox()])
         assert.ok(check && code && check.x + check.width <= code.x, `${label}: checkbox separado del número`)
       }
-      // Filtros: Fecha | N° Pedido | N° Bulto | Usuario | Estado | Tipo | Limpiar, misma altura y texto centrado.
-      const filters = ["input[aria-label=FECHA]", 'input[aria-label="N° PEDIDO"]', 'input[aria-label="N° BULTO"]', "button[aria-label=USUARIO]", "button[aria-label=ESTADO]", "button[aria-label=TIPO]", ".dispatch-filter-clear"]
+      // Filtros: Fecha | N° Pedido | N° Bulto | Usuario | Estado | Tipo | Transportista | Limpiar, misma altura y texto centrado.
+      const filters = ["input[aria-label=FECHA]", 'input[aria-label="N° PEDIDO"]', 'input[aria-label="N° BULTO"]', "button[aria-label=USUARIO]", "button[aria-label=ESTADO]", "button[aria-label=TIPO]", "button[aria-label=TRANSPORTISTA]", ".dispatch-filter-clear"]
       const boxes = await Promise.all(filters.map((selector) => page.locator(`.dispatch-filters ${selector}`).boundingBox()))
       assert.ok(boxes.every((box) => box && Math.abs(box.height - boxes[0]!.height) < 1), `${label}: altura uniforme (${boxes.map((box) => box?.height).join(", ")})`)
       const rowsOf = new Set(boxes.map((box) => Math.round(box!.y)))
-      assert.equal(rowsOf.size, width >= 1024 ? 1 : width >= 640 ? 2 : 4, `${label}: filas de filtros`)
-      const [tipoBox, clearBox, rowBox] = [boxes[5]!, boxes[6]!, (await page.locator(".dispatch-filter-row").boundingBox())!]
-      assert.ok(Math.abs(tipoBox.y - clearBox.y) < 1, `${label}: Tipo y Limpiar en la misma fila`)
-      assert.ok(tipoBox.width >= 60 && clearBox.x + clearBox.width <= rowBox.x + rowBox.width + 1, `${label}: Tipo legible y Limpiar dentro de la barra`)
+      // Escritorio: una fila; tablet: dos de cuatro; mobile: fecha, tres pares y Limpiar a lo ancho.
+      assert.equal(rowsOf.size, width >= 1024 ? 1 : width >= 640 ? 2 : 5, `${label}: filas de filtros`)
+      const [tipoBox, carrierBox, clearBox, rowBox] = [boxes[5]!, boxes[6]!, boxes[7]!, (await page.locator(".dispatch-filter-row").boundingBox())!]
+      assert.ok(Math.abs(tipoBox.y - carrierBox.y) < 1, `${label}: Tipo y Transportista en la misma fila`)
+      if (width >= 640) assert.ok(Math.abs(carrierBox.y - clearBox.y) < 1, `${label}: Transportista y Limpiar en la misma fila`)
+      else assert.ok(Math.abs(clearBox.width - rowBox.width) < 3, `${label}: Limpiar a lo ancho en mobile`)
+      assert.ok(tipoBox.width >= 60 && carrierBox.width >= 60 && clearBox.x + clearBox.width <= rowBox.x + rowBox.width + 1, `${label}: Tipo y Transportista legibles y Limpiar dentro de la barra`)
       const row = await page.locator(".dispatch-filter-row").evaluate((element) => [element.scrollWidth, element.clientWidth])
       assert.ok(row[0] <= row[1] + 1, `${label}: ningún filtro queda escondido con scroll`)
-      const tipoClipped = await page.locator(".dispatch-filters button[aria-label=TIPO] span.truncate").first().evaluate((element) => element.scrollWidth > element.clientWidth + 1)
-      assert.equal(tipoClipped, false, `${label}: "TIPO" sin recortar`)
+      for (const name of ["TIPO", "TRANSPORTISTA"]) {
+        const clipped = await page.locator(`.dispatch-filters button[aria-label=${name}] span.truncate`).first().evaluate((element) => element.scrollWidth > element.clientWidth + 1)
+        assert.equal(clipped, false, `${label}: "${name}" sin recortar`)
+      }
       const centers = await page.locator(".dispatch-filters").evaluate((element) => ["button[aria-label=USUARIO]", "button[aria-label=ESTADO]", "button[aria-label=TIPO]"].map((selector) => {
         const button = element.querySelector(selector)!.getBoundingClientRect(), text = element.querySelector(`${selector} span.truncate`)!.getBoundingClientRect()
         return [button.top + button.height / 2, text.top + text.height / 2]

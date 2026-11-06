@@ -47,6 +47,10 @@ const CHAIN = [
   "20261019120000_claim_policy_consolidation",
   "20261020100000_claim_item_resolutions",
   "20261020110000_claim_item_return_obligation",
+  // Proveedor efectivo + retiro por cadete (Envío BEYONIX): el circuito Andreani
+  // tiene que seguir idéntico con estas migraciones aplicadas.
+  "20261106110000_dispatch_records_carrier_filter",
+  "20261106120000_claim_local_pickups",
 ]
 
 type Db = PGlite
@@ -57,6 +61,8 @@ type Row = Record<string, unknown>
 async function setup({ shipping = "domicilio" } = {}) {
   const db = new PGlite()
   await db.exec(source("./fixtures/claim-logistics-schema.sql"))
+  // Pedidos Andreani (shipping_provider explícito): el retiro por cadete no aplica.
+  await db.exec("alter table ordenes add column shipping_provider text default 'andreani', add column envio_proveedor text")
   for (const name of CHAIN) await db.exec(migration(name))
   await db.query("select set_config('request.jwt.claim.role','service_role',false)")
   for (const [id, role] of [[customer, "cliente"], [admin, "admin"], [admin2, "super_admin"], [operator, "operador"]]) {

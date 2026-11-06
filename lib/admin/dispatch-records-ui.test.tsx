@@ -20,8 +20,8 @@ test("Despachos: una tabla, fecha de hoy, filtros combinados, Pedido/Bulto sin d
   const yesterday = dispatchToday(new Date(Date.now() - 86_400_000))
   const users = [{ id: "u-maria", name: "María Ñúñez" }, { id: "u-pedro", name: "Pedro" }, { id: "u-juan", name: "Juan" }]
   const name = (id: string | null) => users.find((user) => user.id === id)?.name ?? null
-  const record = (value: Omit<DispatchRecord, "actorName" | "code" | "displayNumber" | "selectable"> & Partial<DispatchRecord>): DispatchRecord =>
-    ({ code: null, displayNumber: null, selectable: false, ...value, actorName: name(value.actorId) })
+  const record = (value: Omit<DispatchRecord, "actorName" | "code" | "displayNumber" | "selectable" | "carrier"> & Partial<DispatchRecord>): DispatchRecord =>
+    ({ code: null, displayNumber: null, selectable: false, carrier: "andreani", ...value, actorName: name(value.actorId) })
   const records: Array<DispatchRecord & { members?: number[] }> = [
     record({ kind: "batch", id: 3, code: "DSP-3", displayNumber: 3, state: "E", at: `${today}T13:54:00-03:00`, actorId: "u-maria", units: 7, total: 10000, orderCount: 2 }),
     // Entregado ayer: historial, sólo aparece con su fecha.

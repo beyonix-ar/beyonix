@@ -79,7 +79,7 @@ export interface ClaimCancellationBlockerView {
  * o a Finalización cuando el flujo no lo tiene.
  */
 export function getClaimCancellationBlockerViews(codes: readonly ClaimCancellationBlocker[], context: {
-  plan: "cambio_directo" | "retiro" | "retiro_y_reenvio" | "reenvio_sin_devolucion" | null
+  plan: "cambio_directo" | "retiro" | "retiro_y_reenvio" | "reenvio_sin_devolucion" | "retiro_cadete" | "sin_devolucion_local" | null
   /** Dirección de la operación Andreani vigente. */
   legDirection?: "cambio" | "devolucion" | "reemplazo" | null
   /** La incidencia está en unidades (Recepción); si no, es un evento de Andreani a revisar. */

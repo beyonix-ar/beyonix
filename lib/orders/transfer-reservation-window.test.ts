@@ -137,8 +137,11 @@ test("21. el carrito se conserva: no se vacía al crear el pedido ni mientras el
     checkout.indexOf("if (!response.ok || !data.init_point)"),
   )
   assert.doesNotMatch(transferBranch, /clearCart\(\)/)
+  // Sólo se registra el pedido: el carrito se descuenta cuando el servidor confirme el pago.
+  assert.match(transferBranch, /trackPurchase\(data\.order_id, data\.guest_token\)/)
   assert.match(transferBranch, /startNewCheckoutSession\(\)/)
   const success = read("../../app/checkout/success/page.tsx")
-  assert.match(success, /const shouldClearCart =\s*!isTransfer \|\|\s*paymentConfirmed \|\|/)
-  assert.match(success, /if \(!shouldClearCart \|\| hasClearedCartRef\.current\) return/)
+  // Ni la URL de éxito ni el comprobante vacían el carrito: se verifica server-side.
+  assert.doesNotMatch(success, /clearCart|shouldClearCart|payment_proof_url \|\|/)
+  assert.match(success, /void syncPurchasedCart\(\)/)
 })

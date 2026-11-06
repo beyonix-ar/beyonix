@@ -296,7 +296,7 @@ export async function GET(request: Request) {
       : Promise.resolve({ data: [], error: null }),
     auth.admin
       .from("order_claims")
-      .select("*, order_claim_files(*), order_claim_messages(*), order_claim_shipments(*), order_claim_units(*), order_claim_item_resolutions(*)")
+      .select("*, order_claim_files(*), order_claim_messages(*), order_claim_shipments(*), order_claim_local_pickups(*), order_claim_units(*), order_claim_item_resolutions(*)")
       .in(
         "order_id",
         pedidos.map((pedido) => pedido.id)

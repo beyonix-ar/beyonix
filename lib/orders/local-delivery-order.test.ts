@@ -19,9 +19,12 @@ import {
 } from "./local-delivery-status.ts"
 import {
   advanceLocalDelivery,
+  getExhaustedLocalDeliveryEffects,
   getMissingLocalDeliveryEffects,
   isActiveWarrantyItem,
+  LOCAL_DELIVERY_AUTO_RETRY_MAX_FAILURES,
   parseLocalDeliveryEffectRecord,
+  recoverLocalDeliveryEffects,
   retryLocalDeliveryEffects,
   STALE_EFFECT_RESERVATION_MS,
   summarizeLocalDeliveryEffects,
@@ -450,6 +453,95 @@ test("sin poder leer las marcas no se ejecuta ningún efecto (nunca a ciegas); e
   assert.deepEqual(store.emails, [])
   assert.deepEqual((await retryLocalDeliveryEffects(store.deps, 7)).body.pendingEffects, [])
   assert.deepEqual(store.emails, ["entregado"])
+})
+
+// ── Reintento automático (cron /api/cron/local-delivery-effects) ─────────────
+
+test("automático: un email que falló al entregar lo completa el cron, una sola vez", async () => {
+  const store = localDeliveryStore({ estado: "en_camino" })
+  store.failures.email = 1
+  assert.deepEqual((await advanceLocalDelivery(store.deps, 7, "entregado")).body.pendingEffects, ["delivered_email"])
+  const recovered = await recoverLocalDeliveryEffects(store.deps, 7)
+  assert.equal(recovered.status, 200)
+  assert.deepEqual(recovered.body.pendingEffects, [])
+  assert.deepEqual(store.emails, ["entregado"])
+  // Corridas siguientes (y un "Reintentar avisos" manual) no repiten nada.
+  const rowsBefore = store.rows.length
+  await recoverLocalDeliveryEffects(store.deps, 7)
+  await retryLocalDeliveryEffects(store.deps, 7)
+  assert.deepEqual(store.emails, ["entregado"])
+  assert.equal(store.rows.length, rowsBefore)
+  assert.deepEqual(store.completed(), ["delivered_email", "delivered_status", "delivered_warranty"])
+})
+
+test("automático: historial y garantía pendientes (p. ej. auditoría rechazada) se completan una vez, sin reactivar garantías", async () => {
+  const store = localDeliveryStore({ estado: "en_camino" })
+  store.failures.status = 1
+  store.failures.warrantyItems = 1
+  const delivered = await advanceLocalDelivery(store.deps, 7, "entregado")
+  assert.deepEqual(delivered.body.pendingEffects, ["delivered_warranty", "delivered_status"])
+  await recoverLocalDeliveryEffects(store.deps, 7)
+  await recoverLocalDeliveryEffects(store.deps, 7)
+  assert.deepEqual(store.rowsOf("delivered_status"), ["completed"])
+  assert.deepEqual(store.rowsOf("delivered_warranty"), ["completed"])
+  assert.deepEqual(store.warranties.map((item) => item.activations), [1, 1], "cada ítem activado una sola vez")
+  assert.deepEqual(store.emails, ["entregado"])
+})
+
+test("automático con tope: tras los fallos máximos deja de intentar solo; queda visible y el manual sigue disponible", async () => {
+  const store = localDeliveryStore({ estado: "en_camino" })
+  store.failures.email = 1_000
+  await advanceLocalDelivery(store.deps, 7, "entregado")
+  for (let run = 1; run < LOCAL_DELIVERY_AUTO_RETRY_MAX_FAILURES; run += 1) await recoverLocalDeliveryEffects(store.deps, 7)
+  const failed = () => store.rowsOf("delivered_email").filter((state) => state === "failed").length
+  assert.equal(failed(), LOCAL_DELIVERY_AUTO_RETRY_MAX_FAILURES)
+  const records = await store.deps.loadEffectRecords(7)
+  assert.deepEqual([...getExhaustedLocalDeliveryEffects(records)], ["delivered_email"])
+  // El cron ya no lo intenta (ni reserva), pero sigue pendiente.
+  const rowsBefore = store.rows.length
+  const recovered = await recoverLocalDeliveryEffects(store.deps, 7)
+  assert.deepEqual(recovered.body.pendingEffects, ["delivered_email"])
+  assert.equal(store.rows.length, rowsBefore)
+  // Corregida la causa (p. ej. Resend configurado), el reintento manual lo envía.
+  store.failures.email = 0
+  assert.deepEqual((await retryLocalDeliveryEffects(store.deps, 7)).body.pendingEffects, [])
+  assert.deepEqual(store.emails, ["entregado"])
+  assert.deepEqual([...getExhaustedLocalDeliveryEffects(await store.deps.loadEffectRecords(7))], [], "completado: ya no cuenta como agotado")
+})
+
+test("automático, operador y cadete a la vez: el candado por pedido evita efectos y emails duplicados", async () => {
+  const store = localDeliveryStore({ estado: "en_camino" })
+  store.failures.email = 1
+  await advanceLocalDelivery(store.deps, 7, "entregado")
+  const results = await Promise.all([recoverLocalDeliveryEffects(store.deps, 7), retryLocalDeliveryEffects(store.deps, 7), recoverLocalDeliveryEffects(store.deps, 7)])
+  assert.deepEqual(results.map((result) => result.status).sort(), [200, 409, 409])
+  assert.deepEqual(store.emails, ["entregado"])
+  assert.equal(store.rowsOf("delivered_email").filter((state) => state === "completed").length, 1)
+})
+
+test("automático: pedido cancelado o reintegrado después de entregar => no ejecuta ningún efecto", async () => {
+  const store = localDeliveryStore({ estado: "en_camino" })
+  store.failures.email = 1
+  await advanceLocalDelivery(store.deps, 7, "entregado")
+  store.order.financial_status = "refund_pending"
+  const rowsBefore = store.rows.length
+  const recovered = await recoverLocalDeliveryEffects(store.deps, 7)
+  assert.equal(recovered.status, 409)
+  assert.equal(store.rows.length, rowsBefore)
+  assert.deepEqual(store.emails, [])
+})
+
+test("automático: nunca avanza un pedido (sólo completa efectos de la etapa real)", async () => {
+  const store = localDeliveryStore({ estado: "pagado" })
+  const recovered = await recoverLocalDeliveryEffects(store.deps, 7)
+  assert.equal(recovered.status, 409)
+  assert.equal(store.order.estado, "pagado")
+  assert.deepEqual(store.rows, [])
+  const route = readFileSync("app/api/cron/local-delivery-effects/route.ts", "utf8")
+  assert.match(route, /isCronRequestAuthorized\(request\.headers\.get\("authorization"\), process\.env\.CRON_SECRET\)/)
+  assert.match(route, /localDeliveryServiceDeps\(admin, \{ type: "system" \}\)/)
+  assert.doesNotMatch(route, /advanceLocalDelivery/)
+  assert.match(readFileSync("lib/orders/local-delivery-deps.ts", "utf8"), /if \(actor\.type === "system"\) return null/)
 })
 
 test("dos operadores marcan En camino a la vez: uno gana, el otro recibe conflicto y no hay efectos duplicados", async () => {
@@ -939,7 +1031,8 @@ test("ruta y panel: transición atómica en el WHERE, reintento explícito y só
   assert.match(panel, /\{next === "entregado" && \(/)
   assert.match(panel, /Reintentar avisos/)
   const page = readFileSync("app/admin/sections/despachos/admin-dispatches.tsx", "utf8")
-  assert.match(page, /\{listView && <LocalDeliveryPanel refreshSignal=\{board\} \/>\}/)
+  // TRANSPORTISTA = Andreani oculta el circuito local; Todos y BEYONIX lo muestran.
+  assert.match(page, /\{listView && filters\.carrier !== "andreani" && <LocalDeliveryPanel refreshSignal=\{board\} \/>\}/)
 })
 
 // ── Costo del cadete devengado al entregar ───────────────────────────────────

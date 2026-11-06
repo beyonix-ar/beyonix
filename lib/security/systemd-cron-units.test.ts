@@ -22,6 +22,7 @@ test("hay unidades systemd para todos los jobs programados de producción", () =
     "cleanup-claim-uploads",
     "expire-mercadopago-orders",
     "expire-transfer-orders",
+    "local-delivery-effects",
     "reconcile-mercadopago-refunds",
     "verify-transfer-orders",
   ]) {

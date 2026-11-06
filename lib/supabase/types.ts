@@ -7,6 +7,7 @@ import type {
 } from "../orders/claim-shipment-view.ts"
 import type { AdminPendingFacts } from "../orders/admin-pending-actions.ts"
 import type { ClaimItemResolutionRow } from "../orders/claim-policy.ts"
+import type { ClaimLocalPickupSource } from "../orders/claim-local-pickup.ts"
 import type { DispatchProgress } from "../orders/shipping-stage.ts"
 import type { ProductColorMode } from "../products/color-mode.ts"
 
@@ -586,7 +587,8 @@ export interface SupabaseOrderRefundProof {
 export interface SupabaseOrderAuditEvent {
   id: number
   order_id: number
-  actor_type: "customer" | "admin" | "system"
+  /** `courier`: cadete de Envío BEYONIX desde el QR de la etiqueta (sin login). */
+  actor_type: "customer" | "admin" | "system" | "courier"
   actor_id?: string | null
   action: string
   previous_status?: string | null
@@ -929,6 +931,8 @@ export interface SupabaseOrderClaim {
   order_claim_messages?: SupabaseOrderClaimMessage[]
   /** Operaciones Andreani del reclamo (cambio, devolución, reemplazo). El cliente recibe sólo campos seguros. */
   order_claim_shipments?: SupabaseOrderClaimShipment[] | null
+  /** Envío BEYONIX: retiro por cadete de la devolución. El cliente recibe sólo campos seguros. */
+  order_claim_local_pickups?: ClaimLocalPickupSource[] | null
   /** Sólo Admin: paradero lógico de cada unidad (original y reemplazo). */
   order_claim_units?: SupabaseOrderClaimUnit[] | null
   /** Reclamo mixto: unidades de cada ítem por solución (reemplazo, reintegro, saldo). */

@@ -1,9 +1,9 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { Bike, CheckCircle2, PackageCheck, RotateCcw, Truck, Undo2 } from "lucide-react"
+import { AlertTriangle, Bike, CheckCircle2, Clock3, Eye, PackageCheck, RotateCcw, Truck, Undo2 } from "lucide-react"
 
-import { AdminButton, AdminEmptyState, AdminPrimaryButton, AdminSection } from "@/app/admin/components/admin-controls"
+import { AdminBadge, AdminButton, AdminEmptyState, AdminPrimaryButton, AdminSection } from "@/app/admin/components/admin-controls"
 import { orderCode } from "@/lib/admin/dispatch"
 import { dispatchLocationHref } from "@/lib/admin/dispatch-location"
 import {
@@ -14,6 +14,7 @@ import {
 } from "@/lib/orders/local-delivery-status"
 import { LOCAL_DELIVERY_EFFECT_LABELS, type LocalDeliveryEffect } from "@/lib/orders/local-delivery-service"
 import { LOCAL_DELIVERY_NAME } from "@/lib/shipping/local-delivery"
+import { splitDeliveryAddress } from "@/lib/shipping/local-delivery-label"
 import {
   describeAdminLocalDeliveryReservation,
   LOCAL_DELIVERY_INCIDENT_REASON_LABELS,
@@ -33,8 +34,10 @@ interface LocalDeliveryRecord {
   cliente_direccion: string | null
   localidad: string | null
   cp_destino: string | null
-  /** Auditoría, garantía o email que fallaron y se pueden reintentar. */
+  /** Historial, garantía o email todavía sin completar (se reintentan solos). */
   pendingEffects?: LocalDeliveryEffect[]
+  /** Pendientes cuyo reintento automático se agotó: requieren atención. */
+  exhaustedEffects?: LocalDeliveryEffect[]
   /** Preparando: qué falta (pickeo, bultos, etiquetas BEYONIX) para entregarlo al cadete. */
   preparationError?: string | null
   /** Resultado informado por el cadete (QR), retorno y reserva. */
@@ -43,17 +46,22 @@ interface LocalDeliveryRecord {
 
 type PanelAction = LocalDeliveryAction | "retry_effects" | "incident_retry" | "incident_return"
 
-const STAGE_TONE: Record<LocalDeliveryStage, string> = {
-  preparing: "border-amber-300/35 bg-amber-300/10 text-amber-100",
-  in_transit: "border-sky-300/35 bg-sky-300/10 text-sky-100",
-  delivered: "border-emerald-300/35 bg-emerald-300/10 text-emerald-100",
+type BadgeTone = "neutral" | "info" | "success" | "warning" | "danger"
+
+const STAGE_TONE: Record<LocalDeliveryStage, BadgeTone> = {
+  preparing: "warning",
+  in_transit: "info",
+  delivered: "success",
 }
-const OUTCOME_TONE: Partial<Record<LocalDeliveryOutcomeStatus, string>> = {
-  first_attempt_failed: "border-amber-300/45 bg-amber-300/15 text-amber-100",
-  incident: "border-red-300/45 bg-red-400/15 text-red-100",
-  returning: "border-orange-300/45 bg-orange-300/15 text-orange-100",
-  returned: "border-violet-300/45 bg-violet-300/15 text-violet-100",
+const OUTCOME_TONE: Partial<Record<LocalDeliveryOutcomeStatus, BadgeTone>> = {
+  first_attempt_failed: "warning",
+  incident: "danger",
+  returning: "warning",
+  returned: "neutral",
 }
+
+const effectLabels = (effects: readonly LocalDeliveryEffect[]) =>
+  [...new Set(effects.map((effect) => LOCAL_DELIVERY_EFFECT_LABELS[effect]))].join(", ")
 /** Con el pedido regresando o devuelto ya no se entrega (la base también lo impide). */
 const NO_DELIVERY_OUTCOMES = new Set<LocalDeliveryOutcomeStatus>(["returning", "returned"])
 
@@ -119,45 +127,70 @@ export function LocalDeliveryPanel({ refreshSignal }: { refreshSignal?: unknown 
 
   const renderOrder = (order: LocalDeliveryRecord) => {
     const busy = busyId === order.id
+    const code = orderCode(order.id)
     const outcome = order.outcome ?? null
     const blocked = outcome ? NO_DELIVERY_OUTCOMES.has(outcome.status) : false
     // Sólo el siguiente paso: Preparando → En camino → Entregado.
     const next = blocked ? null : getNextLocalDeliveryAction(order.stage)
     const pending = order.pendingEffects ?? []
+    const exhausted = order.exhaustedEffects ?? []
+    const pendingLabels = effectLabels(pending)
     const incident = outcome?.status === "incident" ? outcome.incident : null
     const reservation = describeAdminLocalDeliveryReservation(outcome?.reservation ?? null)
+    // Con resultado del cadete, ese estado reemplaza a "En camino" (nunca dos estados a la vez).
     const outcomeTone = outcome ? OUTCOME_TONE[outcome.status] : undefined
     // En camino exige pickeo, bultos y etiquetas BEYONIX confirmadas (el servidor lo vuelve a validar).
     const notReady = next === "en_camino" ? order.preparationError ?? null : null
+    // Vista principal: destinatario, calle y zona. Referencia y teléfono, en el
+    // detalle del pedido (y en el title, sin ocupar lugar).
+    const { address, reference } = splitDeliveryAddress(order.cliente_direccion)
+    const zone = [order.localidad, order.cp_destino && `CP ${order.cp_destino}`].filter(Boolean).join(" · ")
+    const recipient = [order.cliente_nombre, address, zone].filter(Boolean).join(" · ")
+    const recipientDetail = [recipient, reference && `Ref.: ${reference}`, order.cliente_telefono && `Tel.: ${order.cliente_telefono}`].filter(Boolean).join(" · ")
+    // Una sola línea operativa: lo que hay que hacer o saber ahora.
+    const attempts = outcome && outcome.failedAttempts > 0
+      ? (outcome.failedAttempts === 1 ? "1 intento fallido (cliente ausente) · pendiente segundo intento" : "2 intentos fallidos (cliente ausente)")
+      : null
     return (
       <li key={order.id} data-local-delivery-order={order.id} data-local-delivery-stage={order.stage} data-local-delivery-outcome={outcome?.status}
-        className="flex flex-col gap-2 rounded-xl border border-white/10 bg-black/20 p-3 sm:flex-row sm:items-center sm:justify-between">
+        className="local-delivery-row grid gap-x-3 gap-y-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
         <div className="min-w-0">
-          <p className="flex flex-wrap items-center gap-2 text-sm font-black text-white">
-            <span className="tabular-nums">{orderCode(order.id)}</span>
-            {/* Con resultado del cadete, ese estado reemplaza a "En camino" (nunca dos estados a la vez). */}
-            {!(outcome && outcomeTone) && (
-              <span className={`rounded-full border px-2 py-0.5 text-10px font-black uppercase tracking-wide ${STAGE_TONE[order.stage]}`}>
-                {LOCAL_DELIVERY_STAGE_LABELS[order.stage]}
-              </span>
-            )}
-            {outcome && outcomeTone && (
-              <span className={`rounded-full border px-2 py-0.5 text-10px font-black uppercase tracking-wide ${outcomeTone}`} data-local-delivery-outcome-label="">
+          <p className="flex flex-wrap items-center gap-1.5 text-sm font-black text-white">
+            <span className="tabular-nums">{code}</span>
+            {outcome && outcomeTone ? (
+              <AdminBadge tone={outcomeTone} className="local-delivery-badge" data-tone={outcomeTone} data-local-delivery-outcome-label="">
                 {LOCAL_DELIVERY_OUTCOME_LABELS[outcome.status]}
-              </span>
+              </AdminBadge>
+            ) : (
+              <AdminBadge tone={STAGE_TONE[order.stage]} className="local-delivery-badge" data-tone={STAGE_TONE[order.stage]}>
+                {LOCAL_DELIVERY_STAGE_LABELS[order.stage]}
+              </AdminBadge>
+            )}
+            {pending.length > 0 && (
+              <AdminBadge
+                tone={exhausted.length ? "danger" : "neutral"}
+                className="local-delivery-badge"
+                data-tone={exhausted.length ? "danger" : "neutral"}
+                data-local-delivery-pending={pending.join(",")}
+                data-local-delivery-exhausted={exhausted.length ? exhausted.join(",") : undefined}
+                title={exhausted.length
+                  ? `No se pudo completar: ${pendingLabels}. Revisá la configuración y reintentá.`
+                  : `Pendiente: ${pendingLabels}. Se reintenta automáticamente.`}
+              >
+                {exhausted.length ? <AlertTriangle className="size-3" aria-hidden /> : <Clock3 className="size-3" aria-hidden />}
+                {exhausted.length ? "Avisos con error" : "Avisos en curso"}
+              </AdminBadge>
             )}
           </p>
-          <p className="mt-0.5 truncate text-xs text-white/70">
-            {[order.cliente_nombre, order.cliente_direccion, order.localidad, order.cp_destino && `CP ${order.cp_destino}`, order.cliente_telefono]
-              .filter(Boolean).join(" · ")}
+          <p className="mt-1 truncate text-xs text-white/70" title={recipientDetail || undefined} data-local-delivery-recipient="">
+            {recipient || "—"}
           </p>
-          {outcome && outcome.failedAttempts > 0 && (
-            <p className="mt-0.5 text-xs font-bold text-amber-200" data-local-delivery-attempts={outcome.failedAttempts}>
-              {outcome.failedAttempts === 1 ? "1 intento fallido (cliente ausente) · pendiente segundo intento" : "2 intentos fallidos (cliente ausente)"}
-            </p>
+          {attempts && (
+            <p className="mt-0.5 text-xs font-bold text-amber-200" data-local-delivery-attempts={outcome?.failedAttempts}>{attempts}</p>
           )}
           {incident && (
-            <p className="mt-0.5 text-xs font-bold text-red-200" data-local-delivery-incident={incident.reason}>
+            <p className="mt-0.5 truncate text-xs font-bold text-red-200" data-local-delivery-incident={incident.reason}
+              title={incident.comment ? `Incidencia: ${LOCAL_DELIVERY_INCIDENT_REASON_LABELS[incident.reason]} — “${incident.comment}”` : undefined}>
               Incidencia: {LOCAL_DELIVERY_INCIDENT_REASON_LABELS[incident.reason]}{incident.comment ? ` — “${incident.comment}”` : ""}
             </p>
           )}
@@ -170,48 +203,50 @@ export function LocalDeliveryPanel({ refreshSignal }: { refreshSignal?: unknown 
             </p>
           )}
           {notReady && <p className="mt-0.5 text-xs font-bold text-amber-200" data-local-delivery-preparation="">{notReady}</p>}
-          {pending.length > 0 && (
-            <p className="mt-0.5 text-xs font-bold text-amber-200" data-local-delivery-pending={pending.join(",")}>
-              Pendiente: {[...new Set(pending.map((effect) => LOCAL_DELIVERY_EFFECT_LABELS[effect]))].join(", ")}
+          {exhausted.length > 0 && (
+            <p className="mt-0.5 text-xs font-bold text-red-200" data-local-delivery-effects-error="">
+              Sin completar: {effectLabels(exhausted)}.
             </p>
           )}
         </div>
-        {(next || pending.length > 0 || incident) && (
-          <div className="flex shrink-0 flex-wrap gap-2">
-            {pending.length > 0 && (
-              <AdminButton size="sm" disabled={busy} icon={<RotateCcw className="size-4" />} onClick={() => void advance(order, "retry_effects")}>
-                Reintentar avisos
-              </AdminButton>
-            )}
-            {next === "en_camino" && (
-              // Mismo pickeo, bultos y etiqueta BEYONIX de Despachos (sin Andreani).
-              <a href={dispatchLocationHref({ orderId: order.id, batchId: null })} className="admin-ds-button admin-ds-button-secondary inline-flex min-h-8 cursor-pointer items-center justify-center gap-2 px-3 py-1.5 text-xs font-black" data-local-delivery-prepare="">
-                <PackageCheck className="size-4" />{notReady ? "Preparar" : "Ver preparación"}
-              </a>
-            )}
-            {next === "en_camino" && (
-              <AdminButton size="sm" disabled={busy || Boolean(notReady)} icon={<Truck className="size-4" />} onClick={() => void advance(order, "en_camino")}>
-                Marcar en camino
-              </AdminButton>
-            )}
-            {incident && (
-              <AdminButton size="sm" disabled={busy} icon={<RotateCcw className="size-4" />} onClick={() => void advance(order, "incident_retry")}>
-                Reintentar entrega
-              </AdminButton>
-            )}
-            {incident && (
-              <AdminButton size="sm" disabled={busy} icon={<Undo2 className="size-4" />} onClick={() => void advance(order, "incident_return")}>
-                Regresar a BEYONIX
-              </AdminButton>
-            )}
-            {next === "entregado" && (
-              <AdminPrimaryButton size="sm" disabled={busy} onClick={() => void advance(order, "entregado")}>
-                <CheckCircle2 className="size-4" />
-                Marcar entregado
-              </AdminPrimaryButton>
-            )}
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
+          <a href={`/admin/pedidos/${order.id}`} aria-label={`Ver pedido ${code}`} title="Ver pedido (datos completos)"
+            className="admin-ds-button admin-ds-button-ghost inline-flex size-8 shrink-0 cursor-pointer items-center justify-center" data-local-delivery-detail="">
+            <Eye className="size-4" aria-hidden />
+          </a>
+          {pending.length > 0 && (
+            <AdminButton size="sm" variant="ghost" disabled={busy} className="size-8 shrink-0 px-0"
+              aria-label="Reintentar avisos" title={`Reintentar ahora: ${pendingLabels}`}
+              icon={<RotateCcw className="size-4" aria-hidden />} onClick={() => void advance(order, "retry_effects")} />
+          )}
+          {next === "en_camino" && (
+            // Mismo pickeo, bultos y etiqueta BEYONIX de Despachos (sin Andreani).
+            <a href={dispatchLocationHref({ orderId: order.id, batchId: null })} className="admin-ds-button admin-ds-button-secondary inline-flex min-h-8 cursor-pointer items-center justify-center gap-2 px-3 py-1.5 text-xs font-black" data-local-delivery-prepare="">
+              <PackageCheck className="size-4" />{notReady ? "Preparar" : "Ver preparación"}
+            </a>
+          )}
+          {next === "en_camino" && (
+            <AdminButton size="sm" disabled={busy || Boolean(notReady)} icon={<Truck className="size-4" />} onClick={() => void advance(order, "en_camino")}>
+              Marcar en camino
+            </AdminButton>
+          )}
+          {incident && (
+            <AdminButton size="sm" disabled={busy} icon={<RotateCcw className="size-4" />} onClick={() => void advance(order, "incident_retry")}>
+              Reintentar entrega
+            </AdminButton>
+          )}
+          {incident && (
+            <AdminButton size="sm" disabled={busy} icon={<Undo2 className="size-4" />} onClick={() => void advance(order, "incident_return")}>
+              Regresar a BEYONIX
+            </AdminButton>
+          )}
+          {next === "entregado" && (
+            <AdminPrimaryButton size="sm" disabled={busy} onClick={() => void advance(order, "entregado")}>
+              <CheckCircle2 className="size-4" />
+              Marcar entregado
+            </AdminPrimaryButton>
+          )}
+        </div>
       </li>
     )
   }

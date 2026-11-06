@@ -3,9 +3,13 @@ import "server-only"
 import type { createAdminClient } from "@/lib/supabase/admin"
 import { sendOrderStateEmail } from "@/lib/orders/order-status-notifications"
 import { startPendingItemWarranties } from "@/lib/orders/warranty-activation"
-import type { LocalDeliveryPreparation } from "@/lib/orders/local-delivery-status"
+import { getLocalDeliveryStage, type LocalDeliveryOrderState, type LocalDeliveryPreparation } from "@/lib/orders/local-delivery-status"
 import {
+  getExhaustedLocalDeliveryEffects,
+  getMissingLocalDeliveryEffects,
+  isPendingWarrantyItem,
   parseLocalDeliveryEffectRecord,
+  summarizeLocalDeliveryEffects,
   type LocalDeliveryEffect,
   type LocalDeliveryEffectRecord,
   type LocalDeliveryEffectState,
@@ -26,8 +30,12 @@ import { CONFIRMED_PAYMENT_STATUSES } from "@/lib/orders/order-payment-status"
  */
 export type LocalDeliveryAdminClient = ReturnType<typeof createAdminClient>
 
-/** Operador autenticado de Despachos, o el cadete identificado sólo por el token del QR. */
-export type LocalDeliveryActor = { type: "admin"; id: string } | { type: "courier"; token: string }
+/**
+ * Operador autenticado de Despachos, el cadete identificado sólo por el token
+ * del QR, o el proceso automático que completa efectos pendientes (nunca
+ * cambia el estado de un pedido).
+ */
+export type LocalDeliveryActor = { type: "admin"; id: string } | { type: "courier"; token: string } | { type: "system" }
 
 export const LOCAL_DELIVERY_ORDER_COLUMNS =
   "id,estado,shipping_provider,envio_proveedor,delivered_at,cancelled_at,financial_status,order_change_status,paid_at,payment_status,payment_confirmed_amount,shipping_cost_real,cliente_email,cliente_nombre"
@@ -104,6 +112,54 @@ export function localDeliveryEffectRecords(rows: Array<{ metadata: unknown; crea
     .filter((record): record is LocalDeliveryEffectRecord => record !== null)
 }
 
+export interface LocalDeliveryEffectsSummary {
+  /** Efectos de la etapa actual todavía sin completar. */
+  pending: LocalDeliveryEffect[]
+  /** Pendientes cuyo reintento automático se agotó: requieren atención de Despachos. */
+  exhausted: LocalDeliveryEffect[]
+}
+
+/**
+ * Efectos pendientes de cada pedido con dos lecturas (marcas de efectos e
+ * ítems sin garantía). Lo comparten Despachos y el reintento automático.
+ * `isInTransitEmailObsolete(id)`: el aviso En camino ya no corresponde (el
+ * pedido regresa o regresó a BEYONIX) y no se informa como pendiente.
+ * Lanza si no se pudo leer.
+ */
+export async function loadLocalDeliveryEffectsSummary(
+  admin: LocalDeliveryAdminClient,
+  orders: ReadonlyArray<LocalDeliveryOrderState & { id: number }>,
+  isInTransitEmailObsolete: (orderId: number) => boolean = () => false,
+): Promise<Map<number, LocalDeliveryEffectsSummary>> {
+  const summaries = new Map<number, LocalDeliveryEffectsSummary>()
+  const ids = orders.map((order) => order.id)
+  if (!ids.length) return summaries
+  const [markers, warranties] = await Promise.all([
+    admin.from("order_audit_events").select("order_id,metadata,created_at").in("order_id", ids).in("action", LOCAL_DELIVERY_EFFECT_ACTIONS),
+    admin.from("orden_items").select("orden_id,warranty_started_at,warranty_expires_at,warranty_status").in("orden_id", ids)
+      .is("warranty_started_at", null).is("warranty_expires_at", null),
+  ])
+  if (markers.error || warranties.error) throw new Error("EFFECT_RECORDS_READ_FAILED")
+  const rowsByOrder = new Map<number, Array<{ metadata: unknown; created_at: string }>>()
+  for (const row of markers.data ?? []) rowsByOrder.set(row.order_id, [...(rowsByOrder.get(row.order_id) ?? []), row])
+  const pendingWarranties = new Map<number, number>()
+  for (const item of warranties.data ?? []) {
+    if (isPendingWarrantyItem(item)) pendingWarranties.set(item.orden_id, (pendingWarranties.get(item.orden_id) ?? 0) + 1)
+  }
+  const nowMs = Date.now()
+  for (const order of orders) {
+    const records = localDeliveryEffectRecords(rowsByOrder.get(order.id) ?? [])
+    const pending = getMissingLocalDeliveryEffects(
+      getLocalDeliveryStage(order),
+      summarizeLocalDeliveryEffects(records, nowMs),
+      pendingWarranties.get(order.id) ?? 0,
+    ).filter((effect) => effect !== "in_transit_email" || !isInTransitEmailObsolete(order.id))
+    const exhausted = getExhaustedLocalDeliveryEffects(records)
+    summaries.set(order.id, { pending, exhausted: pending.filter((effect) => exhausted.has(effect)) })
+  }
+  return summaries
+}
+
 function effectAction(effect: LocalDeliveryEffect, state: LocalDeliveryEffectState) {
   if (effect.endsWith("_email")) return EMAIL_ACTION_BY_STATE[state]
   return effect === "delivered_warranty" ? WARRANTY_ACTION : "order_status_changed"
@@ -121,6 +177,8 @@ export function localDeliveryServiceDeps(admin: LocalDeliveryAdminClient, actor:
       return data as LocalDeliveryOrderRecord | null
     },
     async transitionOrder({ orderId, fromEstado, action, deliveredAt }) {
+      // El proceso automático sólo completa efectos: nunca avanza un pedido.
+      if (actor.type === "system") return null
       if (action === "en_camino") {
         // Sólo Despachos saca un pedido a reparto (el cadete nunca).
         if (actor.type !== "admin") return null

@@ -1,0 +1,10 @@
+[Unit]
+Description=BEYONIX - Reintentar efectos pendientes de Envío BEYONIX cada 15 minutos
+
+[Timer]
+OnCalendar=*:5/15
+Persistent=true
+Unit=beyonix-local-delivery-effects.service
+
+[Install]
+WantedBy=timers.target

@@ -19,7 +19,7 @@ export type AdminClaimWizardStepView = AdminClaimWizardStep & { status: AdminCla
 
 export interface AdminClaimWizardLogistics {
   /** null: el Admin todavía tiene que elegir el método logístico. */
-  plan: "cambio_directo" | "retiro" | "retiro_y_reenvio" | "reenvio_sin_devolucion" | null
+  plan: "cambio_directo" | "retiro" | "retiro_y_reenvio" | "reenvio_sin_devolucion" | "retiro_cadete" | "sin_devolucion_local" | null
   /** Paso actual según el paradero de las unidades (getAdminClaimLogisticsView). */
   step: "logistics" | "reception" | "replacement" | "execution" | "finish"
 }
@@ -85,6 +85,12 @@ function getAdminClaimWizardSteps(input: {
       steps.push({ key: "logistics", label: "Devolución" }, { key: "reception", label: "Inspección" }, { key: "replacement", label: "Envío" })
     } else if (plan === "retiro") {
       steps.push({ key: "logistics", label: "Devolución" }, { key: "reception", label: "Inspección" }, { key: "execution", label: refundLabel })
+    } else if (plan === "retiro_cadete") {
+      // Envío BEYONIX: coordinar/retirar/recibir -> inspección -> entrega local o dinero.
+      steps.push({ key: "logistics", label: "Retiro" }, { key: "reception", label: "Inspección" },
+        replacement ? { key: "replacement", label: "Entrega" } : { key: "execution", label: refundLabel })
+    } else if (plan === "sin_devolucion_local") {
+      steps.push(replacement ? { key: "replacement", label: "Entrega" } : { key: "execution", label: refundLabel })
     } else {
       steps.push({ key: "replacement", label: "Envío" })
     }

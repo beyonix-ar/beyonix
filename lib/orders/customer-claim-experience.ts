@@ -32,6 +32,11 @@ import {
   pickCurrentClaimShipment,
   type ClaimShipmentCustomerSource,
 } from "./claim-shipment-view.ts"
+import {
+  getCustomerLocalPickupView,
+  pickActiveLocalPickup,
+  type ClaimLocalPickupCustomerSource,
+} from "./claim-local-pickup.ts"
 
 export type CustomerClaimMilestone =
   | "received"
@@ -107,6 +112,8 @@ export interface CustomerClaimSource {
   rejection_reason?: string | null
   resolution_summary?: unknown
   order_claim_shipments?: ClaimShipmentCustomerSource[] | ClaimShipmentCustomerSource | null
+  /** Envío BEYONIX: retiro por cadete (sólo campos seguros). */
+  order_claim_local_pickups?: ClaimLocalPickupCustomerSource[] | ClaimLocalPickupCustomerSource | null
   affected_items?: ClaimResolutionLinesSource["affected_items"]
   order_claim_item_resolutions?: ClaimResolutionLinesSource["order_claim_item_resolutions"]
   order_claim_messages?: CustomerClaimMessageSource[] | null
@@ -202,6 +209,27 @@ export function getCustomerClaimSummary(claim: CustomerClaimSource): CustomerCla
   }
 
   const replacement = requirements.solution === "replacement"
+  const nextAfterReturn = replacement
+    ? "Estamos preparando el reemplazo."
+    : requirements.financialAction === "refund"
+      ? "Estamos preparando tu reintegro."
+      : requirements.financialAction === "customer_credit"
+        ? "Estamos preparando tu saldo a favor."
+        : "Lo estamos revisando."
+
+  // Envío BEYONIX: retiro por cadete en el domicilio. Sin horarios ni detalles
+  // internos; la fecha sólo cuando ya se acordó con el cliente.
+  const localPickup = pickActiveLocalPickup(claim.order_claim_local_pickups ?? null)
+  const localView = getCustomerLocalPickupView(localPickup)
+  if (localPickup && localView) {
+    if (localPickup.status === "coordinado") return summary("action", localView.statusLabel, localView.instructions)
+    if (localPickup.status === "retirado") return summary("progress", "Retiramos tu producto", ["Te avisamos cuando llegue a BEYONIX."])
+    if (localPickup.status === "recibido" || localPickup.status === "recibido_parcial") {
+      return summary("progress", "Recibimos tu producto", [nextAfterReturn])
+    }
+    return summary("progress", "Coordinaremos el retiro de tu producto", localView.instructions)
+  }
+
   const current = pickCurrentClaimShipment(legsOf(claim))
   const tracking = current ? text(current.andreani_tracking) || null : null
   const branch = current ? claimBranchLabel(current) : null

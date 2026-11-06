@@ -52,7 +52,11 @@ export function DispatchRecordsTable({ rows, selected, onToggle, onOpen }: {
           onClick={open} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); open() } }}>
           {selectable && <td className="dispatch-order-check" onClick={(event) => event.stopPropagation()}>{row.selectable && <input type="checkbox" className="size-5" aria-label={`Seleccionar ${name} para un Bulto`} checked={selected.has(row.id)} onChange={() => onToggle(row.id)} onKeyDown={(event) => event.stopPropagation()} />}</td>}
           <td className="dispatch-order-date" data-label="Fecha y hora">{dateTime(row.at)}</td>
-          <td className={`dispatch-order-code dispatch-record-order ${row.kind === "order" ? "" : "is-empty"}`} data-label="N° Pedido">{dispatchRecordOrderLabel(row)}</td>
+          <td className={`dispatch-order-code dispatch-record-order ${row.kind === "order" ? "" : "is-empty"}`} data-label="N° Pedido" data-carrier={row.carrier}>
+            {dispatchRecordOrderLabel(row)}
+            {/* Envío BEYONIX: entrega local propia (sin Bulto ni etiqueta Andreani). */}
+            {row.carrier === "beyonix" && <span className="dispatch-carrier-tag" title="Envío BEYONIX">BEYONIX</span>}
+          </td>
           <td className={`dispatch-order-code dispatch-record-batch ${row.kind === "batch" ? "" : "is-empty"}`} data-label="N° Bulto">{dispatchRecordBatchLabel(row)}</td>
           <td className="dispatch-record-user" data-label="Usuario" title={row.actorName ?? undefined}>{row.actorName ?? "—"}</td>
           <td className="dispatch-order-status" data-label="Estado"><DispatchStateBadge state={row.state} /></td>

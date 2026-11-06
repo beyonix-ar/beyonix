@@ -4,7 +4,7 @@ import { JSDOM } from "jsdom"
 import { act, useState } from "react"
 import { clearedDispatchRecordFilters, defaultDispatchRecordFilters, dispatchRecordParams, restoreDispatchRecordsView } from "./dispatch-records"
 
-test("filtros: fecha BEYONIX en hoy, Pedido/Bulto, selects compartidos (sin nativos), sin Equipo y Limpiar", async () => {
+test("filtros: fecha BEYONIX en hoy, Pedido/Bulto, selects compartidos (sin nativos), Transportista, sin Equipo y Limpiar", async () => {
   const dom = new JSDOM("<!doctype html><div id='root'></div>", { url: "https://beyonix.test/admin/despachos" })
   Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true })
   const { createRoot } = await import("react-dom/client")
@@ -32,9 +32,10 @@ test("filtros: fecha BEYONIX en hoy, Pedido/Bulto, selects compartidos (sin nati
     await act(async () => root.render(<Wrapper />))
     const search = document.querySelector("[role=search]")!
     assert.deepEqual([...search.querySelectorAll("input")].map((input) => input.getAttribute("aria-label")), ["FECHA", "N° PEDIDO", "N° BULTO"])
-    assert.deepEqual([...search.querySelectorAll("button[aria-haspopup=listbox]")].map((button) => button.getAttribute("aria-label")), ["USUARIO", "ESTADO", "TIPO"])
+    assert.deepEqual([...search.querySelectorAll("button[aria-haspopup=listbox]")].map((button) => button.getAttribute("aria-label")), ["USUARIO", "ESTADO", "TIPO", "TRANSPORTISTA"])
     assert.deepEqual([...search.children].map((child) => (child.matches("input") ? child : child.querySelector("input, button"))?.getAttribute("aria-label") ?? child.textContent),
-      ["FECHA", "N° PEDIDO", "N° BULTO", "USUARIO", "ESTADO", "TIPO", "Limpiar"], "orden: Fecha | N° Pedido | N° Bulto | Usuario | Estado | Tipo | Limpiar")
+      ["FECHA", "N° PEDIDO", "N° BULTO", "USUARIO", "ESTADO", "TIPO", "TRANSPORTISTA", "Limpiar"], "orden: Fecha | N° Pedido | N° Bulto | Usuario | Estado | Tipo | Transportista | Limpiar")
+    assert.deepEqual([document.querySelector('button[aria-label="TRANSPORTISTA"]')?.textContent, document.querySelector('button[aria-label="TRANSPORTISTA"]')?.classList.contains("is-placeholder")], ["TRANSPORTISTA", true], "Transportista arranca en Todos")
     assert.deepEqual([document.querySelector('button[aria-label="TIPO"]')?.textContent, document.querySelector('button[aria-label="TIPO"]')?.classList.contains("is-placeholder")], ["TIPO", true], "Tipo arranca en Todos")
     assert.doesNotMatch(search.textContent ?? "", /EQUIPO/i, "sin filtro Equipo")
     assert.equal(search.querySelectorAll("select, details, input[type=date]").length, 0, "nada de selects nativos")
@@ -53,8 +54,15 @@ test("filtros: fecha BEYONIX en hoy, Pedido/Bulto, selects compartidos (sin nati
     await choose("TIPO", "Pedidos")
     assert.equal(filters.kind, "order")
     await choose("TIPO", "Bultos")
-    assert.deepEqual(filters, { date: "2026-10-15", manualDate: true, order: "BX-1012", batch: "Bulto-0002", user: "u-1", state: "E", kind: "batch" }, "fecha elegida a mano")
-    assert.equal(dispatchRecordParams(filters, 1), "page=1&date=2026-10-15&order=BX-1012&batch=Bulto-0002&user=u-1&state=E&kind=batch", "Tipo combinado con los demás filtros")
+    await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="TRANSPORTISTA"]')!.click())
+    assert.deepEqual([...document.querySelectorAll('[role="option"]')].map((item) => item.textContent), ["Todos", "Andreani", "BEYONIX"])
+    await act(async () => { document.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })) })
+    await choose("TRANSPORTISTA", "BEYONIX")
+    assert.equal(filters.carrier, "beyonix")
+    await choose("TRANSPORTISTA", "Andreani")
+    assert.deepEqual(filters, { date: "2026-10-15", manualDate: true, order: "BX-1012", batch: "Bulto-0002", user: "u-1", state: "E", kind: "batch", carrier: "andreani" }, "fecha elegida a mano")
+    assert.equal(dispatchRecordParams(filters, 1), "page=1&date=2026-10-15&order=BX-1012&batch=Bulto-0002&user=u-1&state=E&kind=batch&carrier=andreani", "Tipo y Transportista combinados con los demás filtros")
+    assert.deepEqual([document.querySelector('button[aria-label="TRANSPORTISTA"]')?.textContent, document.querySelector('button[aria-label="TRANSPORTISTA"]')?.classList.contains("is-placeholder")], ["Andreani", false])
     assert.deepEqual([document.querySelector('button[aria-label="TIPO"]')?.textContent, document.querySelector('button[aria-label="TIPO"]')?.classList.contains("is-placeholder")], ["Bultos", false])
     await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="ESTADO"]')!.click())
     assert.deepEqual([...document.querySelectorAll('[role="option"]')].map((item) => item.textContent),
@@ -65,12 +73,12 @@ test("filtros: fecha BEYONIX en hoy, Pedido/Bulto, selects compartidos (sin nati
     await act(async () => document.querySelector<HTMLButtonElement>(".dispatch-filter-clear")!.click())
     // "Limpiar" deja absolutamente todos los filtros vacíos, incluida fecha.
     assert.deepEqual(filters, clearedDispatchRecordFilters())
-    assert.deepEqual([filters.date, filters.order, filters.batch, filters.user, filters.state, filters.kind], ["", "", "", "", "", ""])
+    assert.deepEqual([filters.date, filters.order, filters.batch, filters.user, filters.state, filters.kind, filters.carrier], ["", "", "", "", "", "", ""])
     assert.deepEqual([...search.querySelectorAll("input")].map((input) => input.value), ["", "", ""], "Fecha, N° Pedido y N° Bulto vacíos")
-    assert.deepEqual(["USUARIO", "ESTADO", "TIPO"].map((label) => {
+    assert.deepEqual(["USUARIO", "ESTADO", "TIPO", "TRANSPORTISTA"].map((label) => {
       const button = document.querySelector(`button[aria-label="${label}"]`)!
       return [button.textContent, button.classList.contains("is-placeholder")]
-    }), [["USUARIO", true], ["ESTADO", true], ["TIPO", true]], "Usuario, Estado y Tipo vacíos")
+    }), [["USUARIO", true], ["ESTADO", true], ["TIPO", true], ["TRANSPORTISTA", true]], "Usuario, Estado, Tipo y Transportista vacíos (Todos)")
     assert.equal(dispatchRecordParams(filters, 1), "page=1", "sin fecha ni filtros ocultos")
   } finally {
     await act(async () => root.unmount())
@@ -86,4 +94,7 @@ test("Limpiar deja absolutamente todos los filtros vacíos, incluida fecha, y re
   const restored = restoreDispatchRecordsView(JSON.stringify({ filters: cleared, page: 1, today }), today)
   assert.deepEqual(restored.filters, cleared, "la sesión guardada conserva la fecha vacía")
   assert.notDeepEqual(restored.filters, defaultDispatchRecordFilters(today))
+  // Transportista guardado en la sesión: válido se conserva; inválido vuelve a Todos.
+  assert.equal(restoreDispatchRecordsView(JSON.stringify({ filters: { ...cleared, carrier: "beyonix" }, page: 1, today }), today).filters.carrier, "beyonix")
+  assert.equal(restoreDispatchRecordsView(JSON.stringify({ filters: { ...cleared, carrier: "oca" }, page: 1, today }), today).filters.carrier, "")
 })

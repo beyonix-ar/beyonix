@@ -275,6 +275,56 @@ test("job de vencimiento: sin el secreto no corre; con el secreto procesa en lot
   })
 })
 
+test("job de efectos pendientes: sin secreto no corre; con secreto reintenta sólo lo pendiente no agotado, con actor system", async () => {
+  const { GET } = await import("../../app/api/cron/local-delivery-effects/route")
+  const marker = (orderId: number, effect: string, state: string, attemptId: string | null = null) =>
+    ({ order_id: orderId, created_at: "2026-11-05T10:00:00.000Z", metadata: { localDeliveryEffect: effect, localDeliveryEffectState: state, ...(attemptId ? { attemptId } : {}) } })
+  const done = (orderId: number) => ["in_transit_status", "delivered_warranty", "delivered_status"].map((effect) => marker(orderId, effect, "completed"))
+    .concat(marker(orderId, "in_transit_email", "superseded"))
+  const markers = [
+    // 61: email de Entregado falló una vez (Resend caído) -> se reintenta.
+    ...done(61), marker(61, "delivered_email", "reserved", "a1"), marker(61, "delivered_email", "failed", "a1"),
+    // 62: todo completo -> no se toca.
+    ...done(62), marker(62, "delivered_email", "completed", "b1"),
+    // 63: email con el tope de fallos -> sólo manual, visible en Despachos.
+    ...done(63), ...Array.from({ length: 6 }, (_, index) => [marker(63, "delivered_email", "reserved", `c${index}`), marker(63, "delivered_email", "failed", `c${index}`)]).flat(),
+  ]
+  const order = (id: number) => ({ id, estado: "entregado", shipping_provider: "beyonix", envio_proveedor: "beyonix", delivered_at: "2026-11-05T09:00:00.000Z", cancelled_at: null,
+    financial_status: "payment_confirmed", order_change_status: null, paid_at: "2026-11-05T08:00:00.000Z", payment_status: "approved", payment_confirmed_amount: 20,
+    shipping_cost_real: 0, cliente_email: "cliente@example.com", cliente_nombre: "Cliente" })
+  await withSupabase(async (calls) => {
+    assert.equal((await GET(new Request("http://localhost/api/cron/local-delivery-effects"))).status, 401)
+    assert.equal(calls.length, 0)
+    const response = await GET(new Request("http://localhost/api/cron/local-delivery-effects", { headers: { Authorization: "Bearer cron-secret-de-prueba" } }))
+    assert.equal(response.status, 200)
+    // Resend no está configurado en el test: el intento falla y queda pendiente (nunca se marca hecho).
+    assert.deepEqual(await response.json(), { ok: true, checked: 3, attempted: 1, completed: 0, stillPending: 1, skipped: 0, errors: 0 })
+    const candidates = calls.find((call) => call.path === "/rest/v1/ordenes" && call.filters.estado === "in.(en_camino,entregado)")
+    assert.equal(candidates?.filters.shipping_provider, "eq.beyonix", "sólo Envío BEYONIX elegible")
+    const inserts = calls.filter((call) => call.method === "POST" && call.path === "/rest/v1/order_audit_events").map((call) => call.body as { order_id: number; actor_type: string; actor_id: string | null; action: string })
+    assert.deepEqual(inserts.map((row) => [row.order_id, row.actor_type, row.actor_id, row.action]), [
+      [61, "system", null, "local_delivery_email_reserved"],
+      [61, "system", null, "local_delivery_email_failed"],
+    ])
+    // Nunca cambia el estado de un pedido.
+    assert.equal(calls.some((call) => call.method === "PATCH" || call.path.startsWith("/rest/v1/rpc/")), false)
+  }, (call) => {
+    if (call.path === "/rest/v1/ordenes") {
+      if (call.filters.estado === "in.(en_camino,entregado)") return Response.json([61, 62, 63].map((id) => ({ id, estado: "entregado", delivered_at: "2026-11-05T09:00:00.000Z" })))
+      const id = Number((call.filters.id ?? "").replace("eq.", ""))
+      return Response.json(order(id))
+    }
+    if (call.path === "/rest/v1/order_audit_events" && call.method === "GET") {
+      const filter = call.filters.order_id ?? ""
+      const ids = filter.startsWith("in.") ? filter.replace(/^in\.\(|\)$/g, "").split(",").map(Number) : [Number(filter.replace("eq.", ""))]
+      return Response.json(markers.filter((row) => ids.includes(row.order_id)))
+    }
+    if (call.path === "/rest/v1/orden_items") return Response.json([])
+    if (call.path === "/rest/v1/local_delivery_shipments") return Response.json(null)
+    return undefined
+  })
+})
+
 test("Despachos GET: el cupo se aplica por subestado en la base; 200 devueltos no ocultan un pedido nuevo", async () => {
   const { GET } = await import("../../app/api/admin/dispatch/local/route")
   const returnedIds = Array.from({ length: 200 }, (_, index) => index + 1)

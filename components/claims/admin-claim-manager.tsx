@@ -69,6 +69,7 @@ import { ClaimShipmentTrace } from "@/components/claims/claim-shipment-trace"
 import { getClaimForceOptions, getClaimShipmentOverride } from "@/lib/orders/claim-shipment-trace"
 import { ClaimResolutionSummary } from "@/components/claims/claim-resolution-summary"
 import { getAdminClaimLogisticsView } from "@/lib/orders/claim-shipment-view"
+import { isLocalDeliveryOrder } from "@/lib/shipping/local-delivery"
 import {
   CLAIM_LINE_SOLUTIONS,
   CLAIM_SOLUTION_OPTIONS,
@@ -1988,6 +1989,8 @@ export function AdminClaimManager({
     .some((note) => note.claim_id === claim.id && ["processing", "authorized"].includes(note.status))
   // Logística de postventa (unidades + operaciones Andreani): fuente de verdad
   // del paradero de cada unidad; la base vuelve a validar cada acción.
+  // Envío BEYONIX (proveedor efectivo): la devolución es por retiro de un cadete.
+  const localDelivery = isLocalDeliveryOrder(pedido)
   const logistics = getAdminClaimLogisticsView({
     status: claim.status,
     // Mixto: resolución operativa y sin cambio directo (claim-policy).
@@ -1996,8 +1999,11 @@ export function AdminClaimManager({
     units: claim.order_claim_units ?? null,
     legacy: claim.logistics_legacy,
     creditNoteActive: claimCreditNoteActive,
+    localDelivery,
+    localPickups: claim.order_claim_local_pickups ?? null,
   })
   const exchangePlan = logistics?.plan === "cambio_directo"
+  const localPlan = logistics?.plan === "retiro_cadete" || logistics?.plan === "sin_devolucion_local"
   // Un cambio nuevo sin método elegido no reserva stock: primero el Admin
   // decide cambio directo o retiro + revisión (los históricos ya recibidos
   // conservan su flujo).
@@ -2015,9 +2021,12 @@ export function AdminClaimManager({
         ...baseReplacementFlow,
         // Cambio directo: se reserva ANTES de retirar el original. Retiro +
         // revisión: sólo con el reenvío autorizado (la base lo vuelve a exigir).
+        // Envío BEYONIX: tras la inspección (o sin devolución), sin Andreani.
         canRegisterReplacement: logistics.plan === "retiro_y_reenvio"
           ? logistics.leg?.direction === "reemplazo" && logistics.leg.canCreate
-          : baseReplacementFlow.canRegisterReplacement || (exchangePlan && !closed),
+          : localPlan
+            ? logistics.flow.needsReservation && !closed
+            : baseReplacementFlow.canRegisterReplacement || (exchangePlan && !closed),
         // Nunca finalizar con unidades en tránsito, sin inspección o con incidencias.
         canConfirmDelivery: baseReplacementFlow.canConfirmDelivery && logistics.canClose,
       }
@@ -2042,6 +2051,7 @@ export function AdminClaimManager({
         ? () => onRegisterReplacement(summaryAffectedItems.length === 1 ? Number(summaryAffectedItems[0].item.id) : null)
         : undefined}
       reserveDisabled={saving || !replacementFlow.canRegisterReplacement || replacementLoadState === "loading"}
+      localDelivery={localDelivery}
       onClaimChange={(next) => {
         // Elegido o corregido el método, el wizard sigue en el paso que corresponde.
         if (section === "method") setViewedStep(null)
@@ -2228,7 +2238,7 @@ export function AdminClaimManager({
   }
   // Pasos operativos con paso "Método": la reserva vive en la operación del
   // cambio directo o en el reenvío; la confirmación final, en Finalización.
-  const reservationStep = logisticsMethodStep ? (logistics?.plan === "retiro_y_reenvio" ? "replacement" : "logistics") : "replacement"
+  const reservationStep = logisticsMethodStep ? (logistics?.plan === "retiro_y_reenvio" || localPlan ? "replacement" : "logistics") : "replacement"
   const finishStep = logisticsMethodStep ? "finish" : "execution"
   const arrivedUnitsByItem = (claim.order_claim_units ?? []).reduce<Record<number, number>>((counts, unit) => {
     if (unit.role === "original" && unit.location === "recibida_beyonix") counts[unit.order_item_id] = (counts[unit.order_item_id] ?? 0) + 1

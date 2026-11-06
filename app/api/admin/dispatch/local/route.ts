@@ -5,17 +5,10 @@ import {
   isLocalDeliveryAction,
   type LocalDeliveryPreparation,
 } from "@/lib/orders/local-delivery-status"
+import { advanceLocalDelivery, retryLocalDeliveryEffects } from "@/lib/orders/local-delivery-service"
 import {
-  advanceLocalDelivery,
-  getMissingLocalDeliveryEffects,
-  isPendingWarrantyItem,
-  retryLocalDeliveryEffects,
-  summarizeLocalDeliveryEffects,
-} from "@/lib/orders/local-delivery-service"
-import {
-  LOCAL_DELIVERY_EFFECT_ACTIONS,
+  loadLocalDeliveryEffectsSummary,
   loadLocalPreparations,
-  localDeliveryEffectRecords,
   localDeliveryServiceDeps,
   NO_LOCAL_DELIVERY_PREPARATION,
   whereLocalDeliveryEligible,
@@ -88,25 +81,6 @@ export async function GET(request: Request) {
     ...queuedIds.flatMap((id) => queuedById.get(id) ?? []),
     ...((delivered.data ?? []) as LocalDeliveryRow[]),
   ]
-  const ids = rows.map((row) => row.id)
-  // Efectos pendientes (auditoría, garantía, email) para "Reintentar avisos".
-  const [markers, warranties] = ids.length
-    ? await Promise.all([
-        auth.admin.from("order_audit_events").select("order_id,metadata,created_at").in("order_id", ids).in("action", LOCAL_DELIVERY_EFFECT_ACTIONS),
-        auth.admin.from("orden_items").select("orden_id,warranty_started_at,warranty_expires_at,warranty_status").in("orden_id", ids)
-          .is("warranty_started_at", null).is("warranty_expires_at", null),
-      ])
-    : [{ data: [], error: null }, { data: [], error: null }]
-  if (markers.error || warranties.error) {
-    return Response.json({ error: "No se pudieron cargar las entregas locales." }, { status: 500 })
-  }
-  const rowsByOrder = new Map<number, Array<{ metadata: unknown; created_at: string }>>()
-  for (const row of markers.data ?? []) rowsByOrder.set(row.order_id, [...(rowsByOrder.get(row.order_id) ?? []), row])
-  const nowMs = Date.now()
-  const pendingWarranties = new Map<number, number>()
-  for (const item of warranties.data ?? []) {
-    if (isPendingWarrantyItem(item)) pendingWarranties.set(item.orden_id, (pendingWarranties.get(item.orden_id) ?? 0) + 1)
-  }
   let loaded: [Map<number, LocalDeliveryPreparation>, Awaited<ReturnType<typeof loadAdminLocalDeliveryOutcomes>>]
   try {
     loaded = await Promise.all([
@@ -118,6 +92,16 @@ export async function GET(request: Request) {
     return Response.json({ error: "No se pudieron cargar las entregas locales." }, { status: 500 })
   }
   const [preparations, outcomes] = loaded
+  // Efectos pendientes (historial, garantía, email): el cron los reintenta
+  // solo; los de reintento agotado quedan marcados para Despachos. El aviso
+  // "En camino" queda obsoleto si el pedido regresa o regresó a BEYONIX.
+  let effects: Awaited<ReturnType<typeof loadLocalDeliveryEffectsSummary>>
+  try {
+    effects = await loadLocalDeliveryEffectsSummary(auth.admin, rows,
+      (orderId) => isInTransitEmailObsolete(outcomes.get(orderId)?.status))
+  } catch {
+    return Response.json({ error: "No se pudieron cargar las entregas locales." }, { status: 500 })
+  }
 
   return Response.json({
     orders: rows.map((row) => {
@@ -129,13 +113,8 @@ export async function GET(request: Request) {
         // Preparando: qué falta (pickeo, bultos, etiquetas) para entregarlo al cadete.
         ...(stage === "preparing" ? { preparation, preparationError: getLocalDeliveryPreparationError(preparation) } : {}),
         outcome: outcomes.get(row.id) ?? null,
-        // El aviso "En camino" queda obsoleto si el pedido regresa o regresó a
-        // BEYONIX: no se ofrece como pendiente (el reintento lo marca superseded).
-        pendingEffects: getMissingLocalDeliveryEffects(
-          stage,
-          summarizeLocalDeliveryEffects(localDeliveryEffectRecords(rowsByOrder.get(row.id) ?? []), nowMs),
-          pendingWarranties.get(row.id) ?? 0,
-        ).filter((effect) => effect !== "in_transit_email" || !isInTransitEmailObsolete(outcomes.get(row.id)?.status)),
+        pendingEffects: effects.get(row.id)?.pending ?? [],
+        exhaustedEffects: effects.get(row.id)?.exhausted ?? [],
       }
     }),
   }, { headers: { "Cache-Control": "no-store" } })

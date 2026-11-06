@@ -512,7 +512,7 @@ export default function CheckoutPage() {
     cart: items,
     cartSessionId,
     isReady: isCartReady,
-    clearCart,
+    trackPurchase,
     startNewCheckoutSession,
     increaseQuantity,
     decreaseQuantity,
@@ -540,7 +540,7 @@ export default function CheckoutPage() {
     useState<MercadoPagoCheckoutMode>("cash")
   // Aceptación de términos ligada a la sesión de checkout (cartSessionId):
   // se conserva al cambiar de medio/modalidad y queda sin efecto sola en una
-  // compra/sesión nueva (clearCart genera otro id). Nunca se persiste.
+  // compra/sesión nueva (una compra confirmada genera otro id). Nunca se persiste.
   const [termsAcceptedSessionId, setTermsAcceptedSessionId] =
     useState<string | null>(null)
   const termsAccepted =
@@ -2239,7 +2239,9 @@ export default function CheckoutPage() {
           return
         }
 
-        clearCart()
+        // Pagado con saldo: el servidor ya lo confirmó; /checkout/success lo
+        // verifica y descuenta sólo estos productos del carrito.
+        trackPurchase(data.order_id, data.guest_token)
         customerCredit.clearAppliedAmount()
         await customerCredit.reload()
         storeGuestOrderToken(data.order_id, data.guest_token)
@@ -2255,9 +2257,11 @@ export default function CheckoutPage() {
           return
         }
 
-        // El carrito se conserva hasta que el pago se confirme: si la reserva
-        // de 20 minutos vence, el cliente vuelve al inicio con su carrito. La
+        // El carrito se conserva hasta que el pago se confirme (Admin o
+        // verificación automática): recién ahí se descuentan estos productos.
+        // Si la reserva de 20 minutos vence, el carrito queda intacto. La
         // sesión comprometida con el pedido no se reutiliza.
+        trackPurchase(data.order_id, data.guest_token)
         customerCredit.clearAppliedAmount()
         await customerCredit.reload()
         storeGuestOrderToken(data.order_id, data.guest_token)
@@ -2274,6 +2278,9 @@ export default function CheckoutPage() {
         return
       }
 
+      // Mercado Pago: el carrito se descuenta cuando el webhook confirme el
+      // pago (al volver, o en cualquier visita posterior), nunca antes.
+      if (data.order_id) trackPurchase(data.order_id, data.guest_token)
       window.location.href = data.init_point
     } catch {
       setCheckoutError(PUBLIC_ERROR_MESSAGES.generic)

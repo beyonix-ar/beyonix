@@ -4,6 +4,7 @@ import { MercadoPagoConfig, Preference } from "mercadopago"
 import { NextResponse } from "next/server"
 
 import { createClient } from "@/lib/supabase/server"
+import { createGuestOrderAccessToken } from "@/lib/orders/guest-order-token"
 import { safeErrorMetadata } from "@/lib/security/safe-error"
 import { CheckoutShippingQuoteError } from "@/lib/cart/checkout-shipping"
 import { AndreaniError } from "@/lib/andreani/client"
@@ -122,6 +123,22 @@ const ALREADY_PAID_MESSAGE =
   "Esta compra ya fue pagada y no puede iniciarse nuevamente."
 const PRICING_CHANGED_MESSAGE =
   "Los precios o condiciones de tu compra se actualizaron. Revisá el nuevo total antes de pagar."
+
+/**
+ * Prueba de posesión del pedido de invitado (misma que transferencia): con
+ * ella el navegador verifica después si el pago se confirmó y descuenta la
+ * compra de su carrito. Nunca corta el pago: si la firma no está configurada,
+ * el carrito simplemente no se descuenta solo.
+ */
+function guestOrderToken(orderId: number, guestCheckout: boolean) {
+  if (!guestCheckout) return null
+  try {
+    return createGuestOrderAccessToken(orderId)
+  } catch (error) {
+    console.error("MERCADOPAGO_GUEST_ORDER_TOKEN_ERROR", safeErrorMetadata(error))
+    return null
+  }
+}
 
 const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN
 
@@ -491,6 +508,7 @@ export async function POST(request: Request) {
         request,
         economicFingerprint,
         reservationSessionId: checkoutSessionId,
+        guestCheckout: !user,
       })
       if (response) return response
     }
@@ -505,6 +523,7 @@ export async function POST(request: Request) {
         request,
         economicFingerprint,
         reservationSessionId: checkoutSessionId,
+        guestCheckout: !user,
       })
       if (response) return response
     }
@@ -636,6 +655,7 @@ export async function POST(request: Request) {
             request,
             economicFingerprint,
             reservationSessionId: checkoutSessionId,
+            guestCheckout: !user,
           })
           if (response) return response
         }
@@ -719,6 +739,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       init_point: preferenceResult.initPoint,
       order_id: order.id,
+      guest_token: guestOrderToken(order.id, !user),
       reused: false,
     })
   } catch (error) {
@@ -877,6 +898,7 @@ async function resolvePendingCustomerCheckoutOrder({
   request,
   economicFingerprint,
   reservationSessionId,
+  guestCheckout,
 }: {
   client: MercadoPagoConfig
   admin: AdminClient
@@ -885,6 +907,7 @@ async function resolvePendingCustomerCheckoutOrder({
   request: Request
   economicFingerprint: string
   reservationSessionId: string
+  guestCheckout: boolean
 }): Promise<Response | null> {
   const action = getPendingCustomerCheckoutOrderAction(
     order,
@@ -908,6 +931,7 @@ async function resolvePendingCustomerCheckoutOrder({
       request,
       economicFingerprint,
       reservationSessionId,
+      guestCheckout,
     })
     return (
       response ??
@@ -961,6 +985,7 @@ async function resolveMercadoPagoOrderAttempt({
   request,
   economicFingerprint,
   reservationSessionId,
+  guestCheckout,
 }: {
   client: MercadoPagoConfig
   admin: AdminClient
@@ -969,6 +994,7 @@ async function resolveMercadoPagoOrderAttempt({
   request: Request
   economicFingerprint: string
   reservationSessionId: string
+  guestCheckout: boolean
 }): Promise<Response | null> {
   const decision = getMercadoPagoCheckoutAttemptDecision(order)
 
@@ -991,6 +1017,7 @@ async function resolveMercadoPagoOrderAttempt({
     return NextResponse.json({
       init_point: decision.initPoint,
       order_id: order.id,
+      guest_token: guestOrderToken(order.id, guestCheckout),
       reused: true,
     })
   }
@@ -1047,6 +1074,7 @@ async function resolveMercadoPagoOrderAttempt({
     return NextResponse.json({
       init_point: result.initPoint,
       order_id: order.id,
+      guest_token: guestOrderToken(order.id, guestCheckout),
       reused: true,
     })
   } catch (error) {

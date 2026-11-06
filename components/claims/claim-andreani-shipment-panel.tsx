@@ -5,6 +5,7 @@ import { Clock, Download, LoaderCircle, Lock, PackageCheck, RefreshCw, Search, T
 
 import { AdminButton, AdminGhostButton, AdminSecondaryButton, adminControlClassName } from "@/app/admin/components/admin-controls"
 import { HelpTip } from "@/components/claims/help-tip"
+import { ClaimLocalMethodForm, ClaimLocalPickupPanel } from "@/components/claims/claim-local-pickup-panel"
 import { openClaimShipmentLabel } from "@/components/claims/claim-shipment-label"
 import { getOrCreateIdempotencyAttempt, type IdempotencyAttempt } from "@/lib/business/idempotency-attempt"
 import {
@@ -107,6 +108,7 @@ export function ClaimAndreaniShipmentPanel({
   section = "all",
   onReserveReplacement,
   reserveDisabled = false,
+  localDelivery = false,
   onClaimChange,
 }: {
   claim: SupabaseOrderClaim
@@ -114,6 +116,8 @@ export function ClaimAndreaniShipmentPanel({
   canManage: boolean
   creditNoteActive?: boolean
   section?: ClaimLogisticsPanelSection
+  /** Pedido Envío BEYONIX: devolución por retiro de cadete, nunca Andreani. */
+  localDelivery?: boolean
   /** Abre el formulario existente de reemplazo (la reserva la valida la base). */
   onReserveReplacement?: () => void
   reserveDisabled?: boolean
@@ -139,6 +143,7 @@ export function ClaimAndreaniShipmentPanel({
   const [unitNotes, setUnitNotes] = useState("")
   const [incidentType, setIncidentType] = useState<ClaimIncidentType | "">("")
   const [confirming, setConfirming] = useState(false)
+  const [localMethod, setLocalMethod] = useState<"retiro_cadete" | "sin_devolucion_local" | null>(null)
   const inFlightRef = useRef(false)
   // Misma acción + mismos datos = misma clave: un reintento tras un timeout
   // nunca se aplica dos veces (la base guarda la clave).
@@ -154,6 +159,8 @@ export function ClaimAndreaniShipmentPanel({
     units: claim.order_claim_units ?? null,
     legacy: claim.logistics_legacy,
     creditNoteActive,
+    localDelivery,
+    localPickups: claim.order_claim_local_pickups ?? null,
   })
   if (!view) return null
   // Sin método, sin operación, sin unidades y sin nada que elegir: no hay logística que mostrar.
@@ -166,7 +173,8 @@ export function ClaimAndreaniShipmentPanel({
   const resendOnly = view.plan === "reenvio_sin_devolucion"
   // Sin devolución no hay paso de Inspección: un reemplazo que vuelve sin retirar se revisa en Envío.
   const inReception = all || section === "reception" || (resendOnly && section === "replacement")
-  const reservationSection: ClaimLogisticsPanelSection = view.plan === "retiro_y_reenvio" || resendOnly ? "replacement" : "logistics"
+  const localPlan = view.plan === "retiro_cadete" || view.plan === "sin_devolucion_local"
+  const reservationSection: ClaimLogisticsPanelSection = view.plan === "retiro_y_reenvio" || resendOnly || localPlan ? "replacement" : "logistics"
   const inReservation = all || section === reservationSection
   const legInSection = Boolean(leg) && (all ||
     (section === "logistics" && leg?.direction !== "reemplazo") ||
@@ -431,9 +439,14 @@ export function ClaimAndreaniShipmentPanel({
                   <label htmlFor={inputId}
                     className={`admin-claim-method-card ${requestKind === choice.direction ? "is-selected" : ""} ${choice.current ? "is-current" : ""} ${choice.available ? "" : "is-disabled"}`}>
                     <input id={inputId} type="radio" name={methodName} value={choice.direction}
-                      checked={requestKind === choice.direction}
+                      checked={requestKind === choice.direction || localMethod === choice.direction}
                       disabled={!canManage || !choice.available || pending === "request"}
-                      onChange={() => void openRequest(choice.direction)} />
+                      onChange={() => {
+                        const direction = choice.direction
+                        // Envío BEYONIX: retiro por cadete o sin devolución (sin sucursal).
+                        if (direction === "retiro_cadete" || direction === "sin_devolucion_local") setLocalMethod(direction)
+                        else void openRequest(direction)
+                      }} />
                     <span className="admin-claim-method-title">{choice.label}</span>
                     {choice.current && <span className="admin-claim-method-badge">Actual</span>}
                   </label>
@@ -460,6 +473,18 @@ export function ClaimAndreaniShipmentPanel({
         ) : view.methodChoices.some((choice) => choice.available) ? (
           <p className="admin-claim-logistics-hint" data-claim-method-lock="free">Todavía no hay operaciones reales: podés cambiar el método.</p>
         ) : null
+      )}
+
+      {canManage && showMethod && localMethod && view.methodChoices.some((choice) => choice.direction === localMethod && choice.available) && (
+        <ClaimLocalMethodForm claimId={claim.id} method={localMethod}
+          choice={view.methodChoices.find((choice) => choice.direction === localMethod) ?? null}
+          onCancel={() => setLocalMethod(null)} onClaimChange={onClaimChange} />
+      )}
+
+      {/* Envío BEYONIX: el retiro vive en su paso; lo que falta recibir también en Inspección. */}
+      {view.localPickup && (inLogistics || (section === "reception" && view.localPickup.canReceive)) && (
+        <ClaimLocalPickupPanel claimId={claim.id} pickup={view.localPickup} items={view.items} itemLabel={itemLabel}
+          canManage={canManage} onClaimChange={onClaimChange} />
       )}
 
       {showOperation && legInSection && leg && (leg.review || leg.incident || leg.error) && (

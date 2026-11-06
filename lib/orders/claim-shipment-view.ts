@@ -15,6 +15,14 @@ import {
   isMixedClaimResolution,
   type ClaimResolutionLinesSource,
 } from "./claim-policy.ts"
+import {
+  getClaimLocalPickupAdminView,
+  getCustomerLocalPickupHeadline,
+  pickActiveLocalPickup,
+  type ClaimLocalPickupAdminView,
+  type ClaimLocalPickupCustomerSource,
+  type ClaimLocalPickupSource,
+} from "./claim-local-pickup.ts"
 
 export type ClaimShipmentDirection = "devolucion" | "cambio" | "reemplazo"
 export type ClaimShipmentStatus = "pendiente" | "generada" | "en_transito" | "en_sucursal" | "entregada" | "cancelada"
@@ -280,6 +288,7 @@ export function getCustomerClaimHeadline(claim: {
   resolution?: string | null
   cancelled_at?: string | null
   order_claim_shipments?: ClaimShipmentCustomerSource[] | ClaimShipmentCustomerSource | null
+  order_claim_local_pickups?: ClaimLocalPickupCustomerSource[] | ClaimLocalPickupCustomerSource | null
   affected_items?: ClaimResolutionLinesSource["affected_items"]
   order_claim_item_resolutions?: ClaimResolutionLinesSource["order_claim_item_resolutions"]
 }): string {
@@ -299,6 +308,17 @@ export function getCustomerClaimHeadline(claim: {
   if (claim.status === "rechazado") return "Reclamo rechazado"
   if (claim.status === "falta_informacion") return "Esperando tu respuesta"
   if (!requirements || ["recibido", "en_revision"].includes(claim.status)) return "Recibimos tu reclamo"
+
+  // Envío BEYONIX: retiro por cadete en el domicilio (sin Andreani).
+  const localPickup = pickActiveLocalPickup(claim.order_claim_local_pickups ?? null)
+  const localHeadline = getCustomerLocalPickupHeadline(localPickup)
+  if (localHeadline) return localHeadline
+  if (localPickup && (localPickup.status === "recibido" || localPickup.status === "recibido_parcial") &&
+    !(requirements.solution === "replacement" && legs.some((row) => row.direction === "reemplazo"))) {
+    if (requirements.solution === "replacement") return "Recibimos tu producto: preparando tu reemplazo"
+    return requirements.financialAction === "refund" ? "Recibimos tu producto: procesando tu reintegro"
+      : requirements.financialAction === "customer_credit" ? "Recibimos tu producto: acreditando tu saldo a favor" : "Recibimos tu producto"
+  }
 
   const current = pickCurrentClaimShipment(legs)
   if (current?.direction === "devolucion" && current.status !== "entregada") {
@@ -334,7 +354,16 @@ export function getCustomerClaimHeadline(claim: {
  * retiro_y_reenvio: retiro -> inspección -> reenvío. reenvio_sin_devolucion:
  * el cliente conserva el original (decisión auditada) y sólo viaja el reemplazo.
  */
-export type ClaimLogisticsPlan = "cambio_directo" | "retiro" | "retiro_y_reenvio" | "reenvio_sin_devolucion"
+export type ClaimLogisticsPlan =
+  | "cambio_directo"
+  | "retiro"
+  | "retiro_y_reenvio"
+  | "reenvio_sin_devolucion"
+  // Envío BEYONIX (sin Andreani): retiro por cadete -> recepción -> inspección
+  // -> reemplazo entregado localmente o reintegro/saldo; o el cliente conserva
+  // el producto (decisión auditada).
+  | "retiro_cadete"
+  | "sin_devolucion_local"
 /**
  * Paso operativo vigente del wizard:
  *   logistics   -> la operación Andreani del método (cambio en sucursal / retiro);
@@ -365,7 +394,7 @@ export interface ClaimUnitActionOption {
   noteMin: number
 }
 
-export type ClaimLogisticsMethod = "cambio" | "devolucion" | "sin_devolucion"
+export type ClaimLogisticsMethod = "cambio" | "devolucion" | "sin_devolucion" | "retiro_cadete" | "sin_devolucion_local"
 
 export interface ClaimLogisticsMethodOption {
   direction: ClaimLogisticsMethod
@@ -498,6 +527,10 @@ export interface AdminClaimLogisticsView {
   canClose: boolean
   wizardStep: ClaimLogisticsWizardStep
   flow: ClaimLogisticsFlow
+  /** Pedido Envío BEYONIX: la devolución es por retiro de un cadete, nunca Andreani. */
+  local: boolean
+  /** Retiro por cadete vigente (estado y acciones válidas), o null. */
+  localPickup: ClaimLocalPickupAdminView | null
 }
 
 const PLAN_LABELS: Record<ClaimLogisticsPlan, string> = {
@@ -505,9 +538,40 @@ const PLAN_LABELS: Record<ClaimLogisticsPlan, string> = {
   retiro: "Devolución por sucursal",
   retiro_y_reenvio: "Devolución, revisión y reenvío",
   reenvio_sin_devolucion: "Sin devolución: envío del reemplazo",
+  retiro_cadete: "Retiro por cadete",
+  sin_devolucion_local: "Sin devolución: el cliente conserva el producto",
 }
 
-export const CLAIM_METHOD_OPTIONS: Record<ClaimLogisticsMethod, ClaimLogisticsMethodOption> = {
+/** Envío BEYONIX: opciones del paso Logística (sin sucursales ni Andreani). */
+const LOCAL_METHOD_OPTIONS: Record<"change" | "refund", Record<"retiro_cadete" | "sin_devolucion_local", ClaimLogisticsMethodOption>> = {
+  change: {
+    retiro_cadete: {
+      direction: "retiro_cadete",
+      label: "Retiro por cadete y posterior reemplazo",
+      description: "Coordinamos con el cliente el retiro en su domicilio. BEYONIX recibe e inspecciona el producto y después entrega el reemplazo.",
+    },
+    sin_devolucion_local: {
+      direction: "sin_devolucion_local",
+      label: "No requiere devolución",
+      description: "El cliente conserva el producto (queda auditado con motivo). BEYONIX reserva y entrega el reemplazo.",
+    },
+  },
+  refund: {
+    retiro_cadete: {
+      direction: "retiro_cadete",
+      label: "Retiro por cadete y reintegro o saldo",
+      description: "Coordinamos con el cliente el retiro en su domicilio. BEYONIX recibe e inspecciona el producto antes del reintegro o el saldo a favor.",
+    },
+    sin_devolucion_local: {
+      direction: "sin_devolucion_local",
+      label: "No requiere devolución",
+      description: "El cliente conserva el producto (queda auditado con motivo). El reintegro o el saldo siguen sus reglas.",
+    },
+  },
+}
+
+/** Métodos Andreani (por sucursal); los de Envío BEYONIX viven en LOCAL_METHOD_OPTIONS. */
+export const CLAIM_METHOD_OPTIONS: Record<"devolucion" | "cambio" | "sin_devolucion", ClaimLogisticsMethodOption> = {
   devolucion: {
     direction: "devolucion",
     label: "Debe volver: devolución y reenvío",
@@ -633,6 +697,13 @@ export function getAdminClaimLogisticsView(input: {
    * ofrece pedir la devolución). undefined: reclamo simple, decide la logística.
    */
   returnRequired?: boolean
+  /**
+   * Pedido Envío BEYONIX (proveedor efectivo): la devolución física es por
+   * retiro de un cadete; nunca se ofrecen sucursales ni operaciones Andreani.
+   */
+  localDelivery?: boolean
+  /** order_claim_local_pickups del reclamo. */
+  localPickups?: ClaimLocalPickupSource[] | ClaimLocalPickupSource | null
 }): AdminClaimLogisticsView | null {
   const shipments = rowsOf(input.shipments)
   const units = input.units ?? []
@@ -640,7 +711,9 @@ export function getAdminClaimLogisticsView(input: {
   const closed = input.status === "cerrado" || input.status === "rechazado"
   const accepted = ACCEPTED_STATUSES.includes(input.status)
   const isChange = input.resolution === "cambio_producto"
-  if (!shipments.length && !units.length && !(accepted && RETURNABLE_RESOLUTIONS.includes(input.resolution ?? ""))) return null
+  const local = Boolean(input.localDelivery)
+  const localPickups = rowsOf(input.localPickups)
+  if (!shipments.length && !units.length && !localPickups.length && !(accepted && RETURNABLE_RESOLUTIONS.includes(input.resolution ?? ""))) return null
 
   const active = shipments.filter((row) => row.status !== "cancelada")
   const current = pickCurrentClaimShipment(shipments)
@@ -649,11 +722,19 @@ export function getAdminClaimLogisticsView(input: {
   const originals = units.filter((unit) => unit.role === "original")
   // Devolución dispensada antes de enviar el reemplazo (request_order_claim_resend_without_return).
   const returnWaived = isChange && isClaimReturnWaived(shipments, units)
-  const plan: ClaimLogisticsPlan | null = returnWaived
-    ? "reenvio_sin_devolucion"
-    : !lastActive
-      ? null
-      : lastActive.direction === "cambio" ? "cambio_directo" : isChange ? "retiro_y_reenvio" : "retiro"
+  // Envío BEYONIX: retiro por cadete vigente, o devolución dispensada sin Andreani.
+  const activeLocalPickup = local ? pickActiveLocalPickup(localPickups) : null
+  const localWaived = local && !activeLocalPickup && isClaimReturnWaived(shipments, units)
+  const plan: ClaimLogisticsPlan | null = activeLocalPickup
+    ? "retiro_cadete"
+    : localWaived
+      ? "sin_devolucion_local"
+      : returnWaived
+        ? "reenvio_sin_devolucion"
+        : !lastActive
+          ? null
+          : lastActive.direction === "cambio" ? "cambio_directo" : isChange ? "retiro_y_reenvio" : "retiro"
+  const localPlan = plan === "retiro_cadete" || plan === "sin_devolucion_local"
 
   const itemIds = [...new Set(units.map((unit) => unit.order_item_id))].sort((a, b) => a - b)
   const items = itemIds.map((orderItemId) => {
@@ -690,30 +771,43 @@ export function getAdminClaimLogisticsView(input: {
   // Un cambio de método con stock reservado o nota de crédito vigente exige
   // corregir primero ese efecto con su propio flujo auditado (el servidor
   // vuelve a exigirlo).
-  const methods: ClaimLogisticsMethod[] = !isChange ? ["devolucion"]
-    : input.allowExchange === false ? ["devolucion", "sin_devolucion"] : ["devolucion", "cambio", "sin_devolucion"]
-  const candidates = methods.filter((method) => input.returnRequired === undefined ||
-      (input.returnRequired ? method !== "sin_devolucion" : method === "sin_devolucion"))
+  // Envío BEYONIX: retiro por cadete o sin devolución (un mixto ya definió
+  // por producto qué vuelve: no se dispensa desde acá).
+  const methods: ClaimLogisticsMethod[] = local
+    ? input.returnRequired === undefined ? ["retiro_cadete", "sin_devolucion_local"] : ["retiro_cadete"]
+    : !isChange ? ["devolucion"]
+      : input.allowExchange === false ? ["devolucion", "sin_devolucion"] : ["devolucion", "cambio", "sin_devolucion"]
+  const isNoReturnMethod = (method: ClaimLogisticsMethod) => method === "sin_devolucion" || method === "sin_devolucion_local"
+  const candidates = local && input.returnRequired === false ? []
+    : methods.filter((method) => input.returnRequired === undefined ||
+      (input.returnRequired ? !isNoReturnMethod(method) : isNoReturnMethod(method)))
   const samePlanAs = (direction: ClaimLogisticsMethod) =>
     plan !== null && (direction === "cambio"
       ? plan === "cambio_directo"
-      : direction === "sin_devolucion" ? plan === "reenvio_sin_devolucion" : plan === "retiro" || plan === "retiro_y_reenvio")
+      : direction === "sin_devolucion" ? plan === "reenvio_sin_devolucion"
+        : direction === "retiro_cadete" || direction === "sin_devolucion_local" ? plan === direction
+          : plan === "retiro" || plan === "retiro_y_reenvio")
+  const methodOption = (direction: ClaimLogisticsMethod): ClaimLogisticsMethodOption =>
+    direction === "retiro_cadete" || direction === "sin_devolucion_local"
+      ? LOCAL_METHOD_OPTIONS[isChange ? "change" : "refund"][direction]
+      : isChange ? CLAIM_METHOD_OPTIONS[direction] : REFUND_METHOD
   const methodOptions: ClaimLogisticsMethodOption[] = []
   let methodChangeRequiresReason = false
   // Con el dinero ya en marcha (NC vigente) no se ofrece pedir la devolución:
   // sería una acción incompatible con el reintegro o el saldo en curso.
+  // Envío BEYONIX: con un retiro vigente, primero se cancela (antes de retirar).
   if (accepted && !closed && openIsFree && !incidentOpen && (units.length === 0 || originalsWithCustomer > 0) && !deliveredOrMoving &&
-    !creditNoteActive && !(plan !== null && reservedReplacements > 0)) {
+    !creditNoteActive && !(plan !== null && reservedReplacements > 0) && !activeLocalPickup) {
     for (const direction of candidates) {
       // Dispensar la devolución sólo antes de cualquier operación Andreani real.
       if (direction === "sin_devolucion" && realOperation) continue
-      if (!samePlanAs(direction)) methodOptions.push(isChange ? CLAIM_METHOD_OPTIONS[direction] : REFUND_METHOD)
+      if (!samePlanAs(direction)) methodOptions.push(methodOption(direction))
     }
-    methodChangeRequiresReason = plan !== null && realOperation
+    methodChangeRequiresReason = !local && plan !== null && realOperation
   }
   const methodChoices: ClaimLogisticsMethodChoice[] = accepted || plan !== null
     ? candidates.map((direction) => ({
-        ...(isChange ? CLAIM_METHOD_OPTIONS[direction] : REFUND_METHOD),
+        ...methodOption(direction),
         current: samePlanAs(direction),
         available: methodOptions.some((option) => option.direction === direction),
       }))
@@ -740,6 +834,12 @@ export function getAdminClaimLogisticsView(input: {
   effectCount("original", ["reincorporada_stock", "baja"], "Inspección registrada")
   if (incidentOpen) effects.push(reviewLeg ? "Evento de Andreani pendiente de revisión" : "Problema de inspección abierto")
   if (creditNoteActive) effects.push("Nota de crédito emitida o en proceso")
+  if (activeLocalPickup) {
+    effects.push(activeLocalPickup.picked_up_at
+      ? "Producto retirado por el cadete"
+      : "Retiro por cadete solicitado")
+  }
+  if (localWaived) effects.push("Devolución dispensada: el cliente conserva el producto")
 
   // Sin alternativa (reintegro: sólo retiro) no hay nada que corregir salvo efectos reales.
   const hasAlternative = candidates.some((direction) => !samePlanAs(direction))
@@ -750,6 +850,12 @@ export function getAdminClaimLogisticsView(input: {
         effects,
         correction: closed
           ? "El reclamo está finalizado."
+          : activeLocalPickup
+            ? activeLocalPickup.picked_up_at
+              ? "El cadete ya retiró el producto: seguí con la recepción en BEYONIX."
+              : "Para elegir otra opción, primero cancelá el retiro por cadete (con un motivo)."
+            : localWaived
+              ? "La devolución ya se dispensó: el cliente conserva el producto."
           : incidentOpen
             ? "Resolvé primero el problema o el evento de Andreani (con motivo)."
             : openLeg && !openIsFree
@@ -775,8 +881,11 @@ export function getAdminClaimLogisticsView(input: {
       const push = (action: ClaimUnitAction, role: ClaimUnitRole, max: number, label: string, noteMin: number) => {
         if (max > 0) unitActions.push({ action, orderItemId, role, max, label, noteMin })
       }
-      push("arrival_original", "original", countBy(itemUnits, "original", (unit) => ["con_cliente", "en_andreani"].includes(unit.location)),
-        "Registrar llegada del producto original a BEYONIX", 0)
+      // Envío BEYONIX: la llegada del original se registra con "Confirmar recepción" del retiro.
+      if (!local) {
+        push("arrival_original", "original", countBy(itemUnits, "original", (unit) => ["con_cliente", "en_andreani"].includes(unit.location)),
+          "Registrar llegada del producto original a BEYONIX", 0)
+      }
       push("arrival_replacement", "reemplazo", countBy(itemUnits, "reemplazo", (unit) => unit.location === "en_andreani"),
         "Registrar regreso del producto nuevo a BEYONIX", 0)
       const deliveredByExchange = countBy(itemUnits, "reemplazo", (unit) => unit.location === "entregada_cliente" &&
@@ -786,7 +895,9 @@ export function getAdminClaimLogisticsView(input: {
         "Inspeccionar producto nuevo devuelto (stock o baja)", 0)
       const freeReserved = countBy(itemUnits, "reemplazo", (unit) => unit.location === "reservada" && !unit.shipment_id)
       push("release_reservation", "reemplazo", freeReserved, "Liberar reserva (vuelve al stock vendible)", 10)
-      push("deliver_manual", "reemplazo", freeReserved, "Confirmar entrega del reemplazo fuera de Andreani", 10)
+      push("deliver_manual", "reemplazo", freeReserved, local
+        ? "Confirmar entrega del reemplazo al cliente (cadete o en mano)"
+        : "Confirmar entrega del reemplazo fuera de Andreani", 10)
       // Sólo cuando bloquea el cierre: reemplazo entregado sin original devuelto.
       const unsettledDeliveries = countBy(itemUnits, "reemplazo", (unit) => unit.location === "entregada_cliente") -
         countBy(itemUnits, "original", (unit) => ["reincorporada_stock", "baja", "conservada_cliente"].includes(unit.location))
@@ -804,8 +915,19 @@ export function getAdminClaimLogisticsView(input: {
     }
   }
 
-  const canClose = canCloseClaimLogistics(shipments, units)
+  // Envío BEYONIX: el retiro abierto (coordinado o con el cadete) también frena el cierre.
+  const localPickupView = getClaimLocalPickupAdminView(activeLocalPickup, units, { closed })
+  const localPickupOpen = Boolean(activeLocalPickup && activeLocalPickup.status !== "recibido")
+  const canClose = canCloseClaimLogistics(shipments, units) && !localPickupOpen
   const legView = current ? adminLegView(current, units) : null
+  // Reemplazo local (sin Andreani): después de inspeccionar el original o con
+  // la devolución dispensada, se reserva y se confirma su entrega.
+  const replacementsDelivered = countBy(units, "reemplazo", (unit) => unit.location === "entregada_cliente")
+  const localReplacementPending = localPlan && isChange &&
+    (plan === "sin_devolucion_local" || originalsInspected) && replacementsDelivered < originals.length
+  const localUnreserved = localReplacementPending
+    ? Math.max(0, originals.length - replacementsDelivered - unassignedReservations.length)
+    : 0
 
   let nextStep = ""
   let humanActionRequired = true
@@ -816,10 +938,24 @@ export function getAdminClaimLogisticsView(input: {
     nextStep = `Andreani informó un evento que no podemos clasificar (${text(reviewLeg.review_event) || "sin detalle"}): el avance quedó congelado. Verificalo con Andreani y registrá la resolución.`
   } else if (legacy && plan === null) {
     nextStep = "Reclamo anterior al circuito por sucursal: seguí su flujo original. Si nunca tuvo movimientos, podés elegir un método logístico."
+  } else if (local && plan === null && methodOptions.length) {
+    nextStep = isChange
+      ? "Elegí si el producto vuelve: retiro por cadete en el domicilio del cliente o sin devolución."
+      : "Si el producto tiene que volver, coordiná el retiro por cadete antes del reintegro o el saldo."
   } else if (plan === null && methodOptions.length) {
     nextStep = isChange
       ? "Elegí si el producto vuelve a BEYONIX antes de enviar el reemplazo."
       : "Si el producto tiene que volver, generá la devolución antes del reintegro o el saldo."
+  } else if (localPickupView && localPickupView.pendingUnits > 0 && localPickupView.status !== "recibido" && !has("original", ["recibida_beyonix"])) {
+    nextStep = localPickupView.status === "pendiente_coordinacion"
+      ? "Coordiná el retiro con el cliente desde la conversación del reclamo. La fecha es opcional."
+      : localPickupView.status === "coordinado"
+        ? `Retiro coordinado para el ${localPickupView.agreedFor}: cuando el cadete lo retire, marcalo como retirado.`
+        : localPickupView.status === "retirado"
+          ? "El cadete tiene el producto: confirmá la recepción cuando lo entregue en BEYONIX."
+          : localPickupView.status === "recibido_parcial"
+            ? "Recepción parcial: confirmá lo que falta cuando llegue o registrá la incidencia."
+            : "Hay una incidencia en el retiro: volvé a coordinarlo o registrá cómo sigue."
   } else if (shipments.some((row) => row.creation_status === "manual_review")) {
     nextStep = "Resultado incierto con Andreani: verificá la operación y conciliala antes de continuar. No se reintenta sola."
   } else if (incidentOpen) {
@@ -828,6 +964,14 @@ export function getAdminClaimLogisticsView(input: {
     nextStep = "El producto nuevo volvió a BEYONIX: inspeccionalo y decidí si vuelve a stock o se da de baja."
   } else if (has("original", ["recibida_beyonix"])) {
     nextStep = "El producto original está en BEYONIX pendiente de inspección: registrá la inspección en Recepción (stock o baja)."
+  } else if (localReplacementPending) {
+    nextStep = localUnreserved > 0
+      ? "Reservá el reemplazo para entregarlo al cliente (cadete o en mano)."
+      : "Reemplazo reservado: confirmá su entrega al cliente."
+  } else if (localPlan && !isChange && !canClose) {
+    nextStep = "Completá la recepción y la inspección antes del reintegro o el saldo."
+  } else if (localPlan && canClose) {
+    nextStep = isChange ? "La logística está resuelta: podés finalizar el reclamo." : "Producto resuelto: seguí con el reintegro o el saldo a favor."
   } else if (openLeg && openLeg.status === "pendiente") {
     if (openLeg.creation_status === "processing") {
       nextStep = "Generando la operación con Andreani."
@@ -877,7 +1021,19 @@ export function getAdminClaimLogisticsView(input: {
     has("original", ["en_andreani", "recibida_beyonix"]) || has("reemplazo", ["recibida_beyonix"]) ||
     (has("reemplazo", ["en_andreani"]) && openLeg?.exchange_outcome === "no_completado")
   let wizardStep: ClaimLogisticsWizardStep = "finish"
-  if (plan === "cambio_directo") {
+  const afterLocalReturn: ClaimLogisticsWizardStep = isChange
+    ? (localReplacementPending || unassignedReservations.length > 0 ? "replacement" : "finish")
+    : "execution"
+  if (plan === "retiro_cadete") {
+    // Retiro (coordinar -> retirado -> recepción) hasta que llegue algo; con
+    // unidades en BEYONIX, Inspección (la recepción de lo que falta sigue ahí).
+    const anyReceived = has("original", ["recibida_beyonix", "reincorporada_stock", "baja"])
+    wizardStep = !anyReceived && localPickupOpen ? "logistics"
+      : receptionPending || !originalsInspected || localPickupOpen ? "reception"
+        : afterLocalReturn
+  } else if (plan === "sin_devolucion_local") {
+    wizardStep = afterLocalReturn
+  } else if (plan === "cambio_directo") {
     const exchangeOpen = openLeg?.direction === "cambio" && openLeg.exchange_outcome !== "no_completado"
     wizardStep = reviewLeg || uncertainLeg || exchangeOpen ? "logistics"
       : receptionPending ? "reception"
@@ -904,7 +1060,23 @@ export function getAdminClaimLogisticsView(input: {
     originals.every((unit) => ["recibida_beyonix", "reincorporada_stock", "baja", "conservada_cliente"].includes(unit.location))
   const claimClosed = input.status === "cerrado"
   const check = (key: string, label: string, done: boolean): ClaimChecklistItem => ({ key, label, done })
-  const checklist: ClaimChecklistItem[] = plan === "cambio_directo"
+  const localCollected = Boolean(activeLocalPickup?.picked_up_at)
+  const localReplacementChecks = isChange ? [
+    check("reserved", "Reemplazo reservado", units.some((unit) => unit.role === "reemplazo")),
+    check("delivered", "Reemplazo entregado", has("reemplazo", ["entregada_cliente"])),
+  ] : []
+  const checklist: ClaimChecklistItem[] = plan === "retiro_cadete"
+    ? [
+        check("requested", "Retiro solicitado", true),
+        check("collected", "Retirado por el cadete", localCollected),
+        check("received", "Producto recibido", originalsReceived),
+        check("inspected", "Producto inspeccionado", originalsInspected),
+        ...localReplacementChecks,
+        check("closed", "Reclamo finalizado", claimClosed),
+      ]
+    : plan === "sin_devolucion_local"
+      ? [...localReplacementChecks, check("closed", "Reclamo finalizado", claimClosed)]
+    : plan === "cambio_directo"
     ? [
         check("reserved", "Reemplazo reservado", units.some((unit) => unit.role === "reemplazo")),
         check("exchange", "Cambio generado", legDone("cambio")),
@@ -984,10 +1156,26 @@ export function getAdminClaimLogisticsView(input: {
   }
   if (plan === "retiro_y_reenvio" && (originalsInspected || replacementReserved || legDone("reemplazo"))) groups.push(resendGroup(legDone("reemplazo")))
   if (plan === "reenvio_sin_devolucion") groups.push(resendGroup(legDone("reemplazo")))
-  const needsReservation = Boolean(openLeg) && openLeg?.status === "pendiente" && openLeg.direction !== "devolucion" &&
-    (openLeg.direction === "cambio"
-      ? pendingReservation > 0
-      : unassignedReservations.length === 0 && !units.some((unit) => unit.role === "reemplazo" && unit.location === "reservada" && unit.shipment_id === openLeg.id))
+  if (plan === "retiro_cadete") {
+    groups.push(progressGroup("devolucion", "Retiro por cadete", [
+      ["requested", "Solicitado", true],
+      ["collected", "Retirado", localCollected || originalsReceived],
+      ["received", "Recibido", originalsReceived],
+      ["inspected", "Inspeccionado", originalsInspected],
+    ]))
+  }
+  if (localPlan && isChange && (plan === "sin_devolucion_local" || originalsInspected || replacementReserved)) {
+    groups.push(progressGroup("reemplazo", "Reemplazo", [
+      ["reserved", "Reservado", replacementReserved],
+      ["delivered", "Entregado", replacementDelivered],
+    ]))
+  }
+  const needsReservation = localPlan
+    ? localUnreserved > 0
+    : Boolean(openLeg) && openLeg?.status === "pendiente" && openLeg.direction !== "devolucion" &&
+      (openLeg.direction === "cambio"
+        ? pendingReservation > 0
+        : unassignedReservations.length === 0 && !units.some((unit) => unit.role === "reemplazo" && unit.location === "reservada" && unit.shipment_id === openLeg.id))
   const processingLeg = shipments.some((row) => row.creation_status === "processing")
   const openCreated = openLeg && openLeg.creation_status === "created" ? openLeg : null
   const waiting = processingLeg
@@ -1004,6 +1192,9 @@ export function getAdminClaimLogisticsView(input: {
   const humanStatus = input.status === "cerrado" || input.status === "rechazado" ? "Finalizado"
     : reviewLeg || incidentOpen || shipments.some((row) => row.creation_status === "manual_review") ? "Requiere revisión"
       : plan === null ? "Pendiente"
+        // Envío BEYONIX: estado del retiro mientras el producto no terminó de llegar.
+        : localPickupView && localPickupOpen && !has("original", ["recibida_beyonix"]) ? localPickupView.statusLabel
+        : localPlan && has("original", ["recibida_beyonix"]) ? "Pendiente de inspección"
         : processingLeg ? "En Andreani"
           : openCreated
             ? (openCreated.status === "en_sucursal" && openCreated.exchange_outcome !== "no_completado") ||
@@ -1016,10 +1207,11 @@ export function getAdminClaimLogisticsView(input: {
   const incidents = units.filter((unit) => unit.incident_open).length + (reviewLeg ? 1 : 0)
   const summary: ClaimLogisticsSummary = {
     method: plan ? PLAN_LABELS[plan] : legacy ? "Flujo anterior (legacy)" : "Sin elegir",
-    branch: current ? claimBranchLabel(current) || legView?.branchLabel || "Sin sucursal" : "Sin sucursal",
+    // Envío BEYONIX: nunca sucursal ni Andreani.
+    branch: !localPlan && current ? claimBranchLabel(current) || legView?.branchLabel || "Sin sucursal" : "Sin sucursal",
     status: humanStatus,
-    andreani: legView ? `${legView.statusLabel}${legView.andreaniEstado ? ` · ${legView.andreaniEstado}` : ""}` : "Sin operación",
-    inspection: (returnWaived || !units.some((unit) => unit.role === "original")) && !units.some((unit) => unit.location === "recibida_beyonix")
+    andreani: local ? "No aplica (Envío BEYONIX)" : legView ? `${legView.statusLabel}${legView.andreaniEstado ? ` · ${legView.andreaniEstado}` : ""}` : "Sin operación",
+    inspection: (returnWaived || localWaived || !units.some((unit) => unit.role === "original")) && !units.some((unit) => unit.location === "recibida_beyonix")
       ? "No aplica"
       : has("original", ["con_cliente", "en_andreani", "recibida_beyonix"]) || has("reemplazo", ["recibida_beyonix"]) ? "Pendiente" : "Completa",
     incidents,
@@ -1046,5 +1238,7 @@ export function getAdminClaimLogisticsView(input: {
     canClose,
     wizardStep,
     flow: { checklist, groups, needsReservation, waiting },
+    local,
+    localPickup: localPickupView,
   }
 }

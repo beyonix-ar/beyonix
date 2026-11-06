@@ -22,9 +22,12 @@ const orders = [
   { id: 13, estado: "entregado", delivered_at: "2026-11-03T14:00:00Z", shipping_provider: "beyonix", financial_status: "payment_confirmed", paid_at: "2026-11-03T12:00:00Z", payment_status: "approved", payment_confirmed_amount: 45000, cliente_nombre: "Luis", cliente_direccion: "Mitre 10", localidad: "ROSARIO", cp_destino: "2000", cliente_telefono: null },
   // Preparando sin todos los bultos confirmados: no puede salir con el cadete.
   { id: 14, estado: "pagado", shipping_provider: "beyonix", financial_status: "payment_confirmed", paid_at: "2026-11-03T12:00:00Z", payment_status: "approved", payment_confirmed_amount: 45000, cliente_nombre: "Sofía", cliente_direccion: "Oroño 55", localidad: "ROSARIO", cp_destino: "2000", cliente_telefono: null, preparationError: "Falta confirmar 1 etiqueta BEYONIX." },
+  // Entregado con el email agotado (p. ej. Resend sin configurar): error persistente visible.
+  { id: 15, estado: "entregado", delivered_at: "2026-11-03T14:30:00Z", shipping_provider: "beyonix", financial_status: "payment_confirmed", paid_at: "2026-11-03T12:00:00Z", payment_status: "approved", payment_confirmed_amount: 45000, cliente_nombre: "Rocío Muñoz", cliente_direccion: "Pellegrini 900. Referencias: Timbre 3B, portón negro al fondo del pasillo", localidad: "ROSARIO", cp_destino: "2000", cliente_telefono: "3416667777" },
 ]
-// Efectos que fallaron y quedan para "Reintentar avisos".
-const pending = { 13: ["delivered_email"] }
+// Efectos pendientes: el cron los reintenta solo; "Reintentar avisos" queda como recuperación manual.
+const pending = { 13: ["delivered_email"], 15: ["delivered_email"] }
+const exhausted = { 15: ["delivered_email"] }
 window.__posts = []
 window.confirm = () => true
 window.fetch = async (input, init) => {
@@ -32,7 +35,7 @@ window.fetch = async (input, init) => {
   if (init && init.method === "POST") {
     const body = JSON.parse(init.body)
     window.__posts.push(body)
-    if (body.action === "retry_effects") { pending[body.orderId] = []; return Response.json({ ok: true, pendingEffects: [] }) }
+    if (body.action === "retry_effects") { pending[body.orderId] = []; exhausted[body.orderId] = []; return Response.json({ ok: true, pendingEffects: [] }) }
     const order = orders.find((item) => item.id === body.orderId)
     const error = getLocalDeliveryTransitionError(order, body.action)
     if (error) return Response.json({ error }, { status: 409 })
@@ -40,7 +43,7 @@ window.fetch = async (input, init) => {
     if (body.action === "entregado") order.delivered_at = "2026-11-03T15:00:00Z"
     return Response.json({ ok: true })
   }
-  return Response.json({ orders: orders.map((order) => ({ ...order, stage: getLocalDeliveryStage(order), pendingEffects: pending[order.id] ?? [] })) })
+  return Response.json({ orders: orders.map((order) => ({ ...order, stage: getLocalDeliveryStage(order), pendingEffects: pending[order.id] ?? [], exhaustedEffects: exhausted[order.id] ?? [] })) })
 }
 createRoot(document.getElementById("root")).render(createElement(LocalDeliveryPanel))
 `
@@ -83,6 +86,15 @@ for (const theme of ["dark", "light"] as const) for (const width of [390, 1280])
       const order = (id: number) => panel.locator(`[data-local-delivery-order='${id}']`)
       assert.equal(await order(11).getAttribute("data-local-delivery-stage"), "preparing")
       assert.match(await order(11).innerText(), /BX-1011[\s\S]*Preparando[\s\S]*Ana Pérez · Córdoba 1234 · ROSARIO · CP 2000/i)
+      // Vista compacta: sin teléfono ni referencias largas; el detalle completo, en el title y en el pedido.
+      assert.doesNotMatch(await panel.innerText(), /3415550000|3416667777|Timbre 3B|portón negro/)
+      assert.match(await order(11).locator("[data-local-delivery-recipient]").getAttribute("title") ?? "", /Tel\.: 3415550000/)
+      assert.match(await order(15).locator("[data-local-delivery-recipient]").getAttribute("title") ?? "", /Ref\.: Timbre 3B, portón negro al fondo del pasillo · Tel\.: 3416667777/)
+      assert.match(await order(15).innerText(), /Rocío Muñoz · Pellegrini 900 · ROSARIO · CP 2000/)
+      assert.equal(await order(11).getByRole("link", { name: "Ver pedido BX-1011" }).getAttribute("href"), "/admin/pedidos/11")
+      // Estados con tono también en ${theme} (no grises): Preparando ámbar, Entregado verde.
+      const stageColors = await panel.locator(".local-delivery-badge").evaluateAll((badges) => badges.map((badge) => getComputedStyle(badge).color))
+      assert.ok(new Set(stageColors).size >= 3, stageColors.join(" | "))
       assert.equal(await order(12).getAttribute("data-local-delivery-stage"), "in_transit")
       // Sin acciones ni textos de Andreani (guía, seguimiento): bultos y etiquetas son los propios BEYONIX.
       assert.doesNotMatch(await panel.innerText(), /andreani|guía|seguimiento/i)
@@ -95,9 +107,15 @@ for (const theme of ["dark", "light"] as const) for (const width of [390, 1280])
       assert.equal(await order(11).getByRole("button", { name: "Marcar entregado" }).count(), 0)
       assert.equal(await order(12).getByRole("button", { name: "Marcar en camino" }).count(), 0)
       assert.equal(await order(12).getByRole("button", { name: "Marcar entregado" }).count(), 1)
-      // Entregado con un aviso fallido: sin avances, sólo "Reintentar avisos".
-      assert.match(await order(13).innerText(), /Pendiente: email al cliente/)
-      assert.deepEqual(await order(13).getByRole("button").allInnerTexts().then((texts) => texts.map((text) => text.trim())), ["Reintentar avisos"])
+      // Entregado con un aviso en curso: indicador compacto (sin texto técnico) y sólo la recuperación manual.
+      assert.match(await order(13).innerText(), /Avisos en curso/i)
+      assert.doesNotMatch(await order(13).innerText(), /Pendiente:|activación de la garantía|registro en el historial/)
+      assert.match(await order(13).locator("[data-local-delivery-pending]").getAttribute("title") ?? "", /Pendiente: email al cliente\. Se reintenta automáticamente\./)
+      assert.deepEqual(await order(13).getByRole("button").evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label"))), ["Reintentar avisos"])
+      // Reintento automático agotado: error persistente visible, con el detalle y el reintento manual.
+      assert.equal(await order(15).locator("[data-local-delivery-exhausted]").getAttribute("data-local-delivery-exhausted"), "delivered_email")
+      assert.match(await order(15).innerText(), /Avisos con error[\s\S]*Sin completar: email al cliente\./i)
+      assert.equal(await order(15).getByRole("button", { name: "Reintentar avisos" }).count(), 1)
       await order(13).getByRole("button", { name: "Reintentar avisos" }).click()
       await page.waitForFunction(() => !document.querySelector("[data-local-delivery-order='13'] [data-local-delivery-pending]"))
       assert.equal(await order(13).getByRole("button").count(), 0)

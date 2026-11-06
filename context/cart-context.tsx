@@ -42,6 +42,16 @@ import {
   releaseAbandonedCheckoutReservations,
 } from "@/lib/cart/checkout-abandonment"
 import { reserveCartStock } from "@/lib/cart/stock-reservations"
+import {
+  parsePurchaseCheckResults,
+  parseTrackedPurchases,
+  pruneTrackedPurchases,
+  registerTrackedPurchase,
+  removePurchasedLines,
+  shouldApplyPurchaseInTab,
+  MAX_TRACKED_PURCHASES,
+  type TrackedPurchase,
+} from "@/lib/cart/purchase-tracking"
 import { trackAddToCart } from "@/lib/analytics/track-commerce"
 
 export type { CartItem }
@@ -78,7 +88,14 @@ interface CartContextType {
   decreaseQuantity: (productId: number, color: string) => void
   getQuantity: (productId: number, color: string) => number
   isInCart: (productId: number, color: string) => boolean
-  clearCart: () => void
+  /**
+   * Registra el pedido recién creado desde este carrito. Sus productos se
+   * descuentan recién cuando el servidor confirme el pago (ver
+   * lib/cart/purchase-tracking.ts); nunca por llegar a una URL de éxito.
+   */
+  trackPurchase: (orderId: number, guestToken?: string | null) => void
+  /** Consulta ya las compras registradas y descuenta las confirmadas. */
+  syncPurchasedCart: () => Promise<void>
   /** Nueva identidad de checkout tras vencer una reserva; conserva el carrito. */
   startNewCheckoutSession: () => void
   /** Vuelve a leer el catálogo vigente de los productos del carrito (sólo UX: pagar siempre revalida server-side). */
@@ -97,6 +114,48 @@ function getUserCartStorageKey(userId: string) {
   return `${USER_CART_STORAGE_PREFIX}:${userId}`
 }
 
+/** Carrito guardado: sessionStorage de la pestaña y, con sesión, localStorage de la cuenta. */
+function writeCartStorage(userId: string | null, nextCart: CartItem[]) {
+  if (nextCart.length > 0) {
+    sessionStorage.setItem(CART_STORAGE_KEY, JSON.stringify(nextCart))
+    if (userId) localStorage.setItem(getUserCartStorageKey(userId), JSON.stringify(nextCart))
+  } else {
+    sessionStorage.removeItem(CART_STORAGE_KEY)
+    if (userId) localStorage.removeItem(getUserCartStorageKey(userId))
+  }
+}
+
+// Compras por confirmar: mismo alcance que el carrito (pestaña del invitado /
+// cuenta compartida entre pestañas y visitas).
+const GUEST_PURCHASES_STORAGE_KEY = "beyonix-cart-purchases"
+const USER_PURCHASES_STORAGE_PREFIX = "beyonix-cart-purchases-user"
+const PURCHASE_SYNC_INTERVAL_MS = 30_000
+
+type PurchaseStore = { storage: Storage; key: string }
+
+function purchaseStore(userId: string | null): PurchaseStore {
+  return userId
+    ? { storage: localStorage, key: `${USER_PURCHASES_STORAGE_PREFIX}:${userId}` }
+    : { storage: sessionStorage, key: GUEST_PURCHASES_STORAGE_KEY }
+}
+
+function readPurchases({ storage, key }: PurchaseStore) {
+  try {
+    return parseTrackedPurchases(storage.getItem(key))
+  } catch {
+    return []
+  }
+}
+
+function writePurchases({ storage, key }: PurchaseStore, list: TrackedPurchase[]) {
+  try {
+    if (list.length) storage.setItem(key, JSON.stringify(list))
+    else storage.removeItem(key)
+  } catch {
+    // Storage lleno o bloqueado: el carrito sigue funcionando como siempre.
+  }
+}
+
 export function CartProvider({ children }: { children: ReactNode }) {
   const [cart, setCart] = useState<CartItem[]>([])
   const [cartSessionId, setCartSessionId] = useState("")
@@ -107,6 +166,13 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const cartSessionIdRef = useRef("")
   const cartOwnerRef = useRef<CartAuthOwner>({ kind: "unknown" })
   const guestCartHandoffRef = useRef<GuestCartHandoff | null>(null)
+  // Cuándo se cargó el carrito de esta pestaña desde storage y qué compras ya
+  // descontó: una compra aplicada en otra pestaña DESPUÉS de esa carga también
+  // se descuenta acá (una sola vez).
+  const cartLoadedAtRef = useRef(0)
+  const appliedPurchasesRef = useRef(new Set<number>())
+  const purchaseSyncInFlightRef = useRef(false)
+  const syncPurchasedCartRef = useRef<() => Promise<void>>(async () => {})
 
   useEffect(() => {
     cartRef.current = cart
@@ -137,6 +203,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       setCartSessionId(nextSessionId)
       setCart([])
     } finally {
+      cartLoadedAtRef.current = Date.now()
       setHasHydrated(true)
     }
   }, [])
@@ -172,16 +239,6 @@ export function CartProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    const writeCartStorage = (userId: string | null, nextCart: CartItem[]) => {
-      if (nextCart.length > 0) {
-        sessionStorage.setItem(CART_STORAGE_KEY, JSON.stringify(nextCart))
-        if (userId) localStorage.setItem(getUserCartStorageKey(userId), JSON.stringify(nextCart))
-      } else {
-        sessionStorage.removeItem(CART_STORAGE_KEY)
-        if (userId) localStorage.removeItem(getUserCartStorageKey(userId))
-      }
-    }
-
     // Ver `lib/cart/guest-cart-handoff.ts`: un invitado confirmado conserva
     // su carrito al iniciar sesión (se une con el de la cuenta); una sesión
     // ya existente restaura el de la cuenta como siempre. Se escribe en
@@ -201,12 +258,17 @@ export function CartProvider({ children }: { children: ReactNode }) {
       }
       setCurrentUserId(userId)
       setCart(nextCart)
+      cartRef.current = nextCart
       writeCartStorage(userId, nextCart)
+      cartLoadedAtRef.current = Date.now()
+      // Con la cuenta ya resuelta, se revisan sus compras por confirmar.
+      void syncPurchasedCartRef.current()
     }
 
     const markGuestIfUnknown = () => {
       if (cartOwnerRef.current.kind === "unknown") {
         cartOwnerRef.current = { kind: "guest" }
+        void syncPurchasedCartRef.current()
       }
     }
 
@@ -269,6 +331,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
       setCurrentUserId(null)
       setCart(nextCart)
+      cartRef.current = nextCart
+      cartLoadedAtRef.current = Date.now()
       setIsOpen(false)
       localStorage.removeItem(CART_STORAGE_KEY)
       if (nextCart.length > 0) {
@@ -423,32 +487,111 @@ export function CartProvider({ children }: { children: ReactNode }) {
     )
   }
 
-  const clearCart = useCallback(() => {
-    setCart([])
-    setIsOpen(false)
-    localStorage.removeItem(CART_STORAGE_KEY)
-    if (currentUserId) {
-      localStorage.removeItem(getUserCartStorageKey(currentUserId))
-    }
-    sessionStorage.removeItem(CART_STORAGE_KEY)
-    sessionStorage.removeItem(CART_SESSION_STORAGE_KEY)
-    const nextSessionId = createCartSessionId()
-    sessionStorage.setItem(CART_SESSION_STORAGE_KEY, nextSessionId)
-    setCartSessionId(nextSessionId)
-
-    void supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) return
-
-      localStorage.removeItem(getUserCartStorageKey(user.id))
-      setCart([])
-    })
-  }, [currentUserId])
-
   const startNewCheckoutSession = useCallback(() => {
     const nextSessionId = createCartSessionId()
     sessionStorage.setItem(CART_SESSION_STORAGE_KEY, nextSessionId)
+    cartSessionIdRef.current = nextSessionId
     setCartSessionId(nextSessionId)
   }, [])
+
+  const trackPurchase = useCallback((orderId: number, guestToken?: string | null) => {
+    const owner = cartOwnerRef.current
+    const userId = owner.kind === "user" ? owner.userId : null
+    const store = purchaseStore(userId)
+    writePurchases(store, registerTrackedPurchase(readPurchases(store), {
+      orderId,
+      // Con sesión el servidor reconoce al dueño; el token sólo sirve al invitado.
+      guestToken: userId ? null : guestToken,
+      sessionId: cartSessionIdRef.current || null,
+    }, Date.now()))
+  }, [])
+
+  /**
+   * Compras registradas → servidor (dueño + pago confirmado) → se descuentan
+   * del carrito exactamente las líneas compradas. Pendiente: se conserva;
+   * rechazada, cancelada o ajena: se descarta sin tocar el carrito.
+   */
+  const syncPurchasedCart = useCallback(async () => {
+    const owner = cartOwnerRef.current
+    if (owner.kind === "unknown" || purchaseSyncInFlightRef.current) return
+    const userId = owner.kind === "user" ? owner.userId : null
+    let stores: PurchaseStore[]
+    try {
+      // La pestaña conserva las compras que hizo como invitado aunque después inicie sesión.
+      stores = userId ? [purchaseStore(null), purchaseStore(userId)] : [purchaseStore(null)]
+    } catch {
+      return
+    }
+    const now = Date.now()
+    const candidates: TrackedPurchase[] = []
+    for (const store of stores) {
+      const current = readPurchases(store)
+      const pruned = pruneTrackedPurchases(current, now)
+      if (pruned.length !== current.length) writePurchases(store, pruned)
+      candidates.push(...pruned.filter((purchase) =>
+        shouldApplyPurchaseInTab(purchase, cartLoadedAtRef.current, appliedPurchasesRef.current)))
+    }
+    if (!candidates.length) return
+
+    purchaseSyncInFlightRef.current = true
+    try {
+      const response = await fetch("/api/checkout/purchase-status", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orders: candidates.slice(-MAX_TRACKED_PURCHASES).map(({ orderId, guestToken }) => ({ orderId, guestToken })),
+        }),
+      })
+      if (!response.ok) return
+      const results = parsePurchaseCheckResults(await response.json())
+      // La cuenta pudo cambiar mientras volvía la respuesta: no se mezcla.
+      if (cartOwnerRef.current !== owner) return
+
+      let nextCart = cartRef.current
+      let rotateSession = false
+      const appliedAt = Date.now()
+      for (const store of stores) {
+        // Se relee: otra pestaña pudo aplicar o registrar algo mientras tanto.
+        const list = readPurchases(store)
+        let changed = false
+        const kept: TrackedPurchase[] = []
+        for (const purchase of list) {
+          const result = results.find((item) => item.orderId === purchase.orderId)
+          if (!result || result.status === "pending") {
+            kept.push(purchase)
+            continue
+          }
+          changed = true
+          if (result.status !== "paid") continue
+          if (shouldApplyPurchaseInTab(purchase, cartLoadedAtRef.current, appliedPurchasesRef.current)) {
+            nextCart = removePurchasedLines(nextCart, result.items ?? [])
+            appliedPurchasesRef.current.add(purchase.orderId)
+            if (purchase.sessionId && purchase.sessionId === cartSessionIdRef.current) rotateSession = true
+          }
+          kept.push({ ...purchase, appliedAt: purchase.appliedAt ?? appliedAt })
+        }
+        if (changed) writePurchases(store, kept)
+      }
+
+      if (nextCart !== cartRef.current) {
+        cartRef.current = nextCart
+        setCart(nextCart)
+        // En el acto: una recarga o una pestaña nueva ya lee el carrito descontado.
+        writeCartStorage(userId, nextCart)
+      }
+      // La identidad de checkout comprometida con el pedido pagado no se reutiliza.
+      if (rotateSession) startNewCheckoutSession()
+    } catch {
+      // Sin red o respuesta inválida: se reintenta en la próxima revisión.
+    } finally {
+      purchaseSyncInFlightRef.current = false
+    }
+  }, [startNewCheckoutSession])
+
+  useEffect(() => {
+    syncPurchasedCartRef.current = syncPurchasedCart
+  }, [syncPurchasedCart])
 
   // Salir de /checkout (link, "Volver" del navegador o recarga en otra
   // página) libera la reserva del Paso 3 en el momento, sin esperar los 20
@@ -487,6 +630,25 @@ export function CartProvider({ children }: { children: ReactNode }) {
         checkoutReleaseInFlightRef.current = false
       })
   }, [hasHydrated, pathname, router, startNewCheckoutSession])
+
+  // Un pago se confirma por webhook o desde Admin mientras el cliente navega:
+  // se revisa al cambiar de página, al volver a la pestaña y cada 30 s. Sin
+  // compras por confirmar no hay request (sólo se lee storage).
+  useEffect(() => {
+    if (!hasHydrated) return
+    const check = () => {
+      if (document.visibilityState === "visible") void syncPurchasedCart()
+    }
+    check()
+    window.addEventListener("focus", check)
+    document.addEventListener("visibilitychange", check)
+    const timer = window.setInterval(check, PURCHASE_SYNC_INTERVAL_MS)
+    return () => {
+      window.removeEventListener("focus", check)
+      document.removeEventListener("visibilitychange", check)
+      window.clearInterval(timer)
+    }
+  }, [hasHydrated, pathname, syncPurchasedCart])
 
   const refreshCartCatalog = useCallback(async (): Promise<CartCatalogRefreshResult> => {
     const productIds = cartRef.current.map((item) => item.product.id)
@@ -538,7 +700,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
         decreaseQuantity,
         getQuantity,
         isInCart,
-        clearCart,
+        trackPurchase,
+        syncPurchasedCart,
         startNewCheckoutSession,
         refreshCartCatalog,
         openCart: () => setIsOpen(true),

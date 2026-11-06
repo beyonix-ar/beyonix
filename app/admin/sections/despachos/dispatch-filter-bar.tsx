@@ -2,7 +2,7 @@
 
 import { AdminSelect } from "@/app/admin/components/admin-controls"
 import { AdminDatePicker } from "@/app/admin/components/admin-date-picker"
-import { DISPATCH_RECORD_KINDS, DISPATCH_RECORD_STATES, type DispatchRecordFilters, type DispatchRecordKind, type DispatchRecordState, type DispatchUser } from "@/lib/admin/dispatch-records"
+import { DISPATCH_RECORD_CARRIERS, DISPATCH_RECORD_KINDS, DISPATCH_RECORD_STATES, type DispatchRecordCarrier, type DispatchRecordFilters, type DispatchRecordKind, type DispatchRecordState, type DispatchUser } from "@/lib/admin/dispatch-records"
 
 type Props = {
   filters: DispatchRecordFilters
@@ -33,6 +33,10 @@ export function DispatchFilterBar({ filters, users, onChange, onClear }: Props) 
     <AdminSelect title="TIPO" value={filters.kind} compact wrapperClassName={selectClass} triggerClassName={filters.kind ? "" : placeholderClass} onChange={(kind) => onChange({ kind })}>
       <option value="" data-selected-label="TIPO">Todos</option>
       {(Object.keys(DISPATCH_RECORD_KINDS) as DispatchRecordKind[]).map((kind) => <option key={kind} value={kind}>{DISPATCH_RECORD_KINDS[kind]}</option>)}
+    </AdminSelect>
+    <AdminSelect title="TRANSPORTISTA" value={filters.carrier} compact wrapperClassName={selectClass} triggerClassName={filters.carrier ? "" : placeholderClass} onChange={(carrier) => onChange({ carrier })}>
+      <option value="" data-selected-label="TRANSPORTISTA">Todos</option>
+      {(Object.keys(DISPATCH_RECORD_CARRIERS) as DispatchRecordCarrier[]).map((carrier) => <option key={carrier} value={carrier}>{DISPATCH_RECORD_CARRIERS[carrier]}</option>)}
     </AdminSelect>
     <button type="button" className="dispatch-filter-clear" onClick={onClear}>Limpiar</button>
   </div>

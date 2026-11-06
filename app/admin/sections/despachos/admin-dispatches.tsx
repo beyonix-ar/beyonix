@@ -311,7 +311,8 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
       {totalPages > 1 && <DispatchPagination page={page} pages={totalPages} onPage={setPage} />}
     </AdminSection>}
 
-    {listView && <LocalDeliveryPanel refreshSignal={board} />}
+    {/* Entregas locales: circuito de Envío BEYONIX; con TRANSPORTISTA = Andreani no corresponde. */}
+    {listView && filters.carrier !== "andreani" && <LocalDeliveryPanel refreshSignal={board} />}
 
     </div>
   </div>

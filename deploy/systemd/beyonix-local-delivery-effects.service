@@ -1,0 +1,18 @@
+[Unit]
+Description=BEYONIX - Completar efectos pendientes de Envío BEYONIX (historial, garantía, email)
+After=network-online.target pm2-beyonix.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+
+# Mismo patrón que beyonix-expire-transfer-orders.service (ver README): el
+# CRON_SECRET nunca viaja en argv -- curl lee el header del archivo privado
+# /etc/beyonix/curl-verify-transfer-orders.conf (600, root:root) con --config.
+# flock -n evita corridas superpuestas (la app además usa un candado por pedido
+# y reservas persistidas para no repetir emails).
+ExecStart=/usr/bin/flock -n /run/lock/beyonix-local-delivery-effects.lock \
+  /usr/bin/curl --fail --silent --show-error --max-time 300 \
+  --config /etc/beyonix/curl-verify-transfer-orders.conf \
+  -o /dev/null \
+  http://127.0.0.1:3000/api/cron/local-delivery-effects

@@ -327,6 +327,27 @@ done
 
 ---
 
+# Efectos pendientes de Envío BEYONIX (preparado, no instalado)
+
+`beyonix-local-delivery-effects` (cada 15 min, `*:5/15`) llama a
+`/api/cron/local-delivery-effects`: completa solo el historial, la garantía y el
+email que quedaron pendientes al pasar un pedido Envío BEYONIX a En camino o
+Entregado (misma lógica y mismo candado por pedido que Despachos y el cadete; un
+email nunca sale dos veces). Tras 6 fallos de un mismo efecto deja de intentarlo y
+queda marcado en Despachos → Entregas locales, con reintento manual.
+
+Orden: primero la migración `20261106100000_order_audit_events_courier_actor.sql`
+y el deploy del código; después instalar el timer (en la VPS, desde `~/apps/beyonix`):
+
+```bash
+sudo cp deploy/systemd/beyonix-local-delivery-effects.service deploy/systemd/beyonix-local-delivery-effects.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now beyonix-local-delivery-effects.timer
+systemctl list-timers | grep beyonix-local-delivery-effects
+```
+
+---
+
 # Facturación automática ARCA (preparada, todavía apagada)
 
 El scheduler de ARCA en producción es `beyonix-arca-invoices.timer` (cada minuto);

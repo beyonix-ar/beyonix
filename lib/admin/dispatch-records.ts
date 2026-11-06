@@ -10,12 +10,15 @@ import { SHIPPING_STAGE_LABELS } from "../orders/shipping-stage"
 /** Sólo estados respaldados por datos: un estado "Anulado" no existe en la base. */
 export type DispatchRecordState = "P" | "C" | "E" | "X"
 export type DispatchRecordKind = "order" | "batch"
+/** Proveedor efectivo (public.order_shipping_carrier): shipping_provider manda; envio_proveedor es el respaldo legacy. */
+export type DispatchRecordCarrier = "andreani" | "beyonix"
 export type DispatchRecord = {
   kind: DispatchRecordKind
   id: number
   code: string | null
   displayNumber: number | null
   state: DispatchRecordState
+  carrier: DispatchRecordCarrier
   at: string | null
   actorId: string | null
   actorName: string | null
@@ -43,6 +46,11 @@ export const DISPATCH_RECORD_KINDS: Record<DispatchRecordKind, string> = { order
 const KINDS = Object.keys(DISPATCH_RECORD_KINDS) as DispatchRecordKind[]
 export const isDispatchRecordKind = (value: unknown): value is DispatchRecordKind => KINDS.some((kind) => kind === value)
 
+/** Filtro TRANSPORTISTA: Andreani (pedidos y Bultos) o Envío BEYONIX (pedidos locales). */
+export const DISPATCH_RECORD_CARRIERS: Record<DispatchRecordCarrier, string> = { andreani: "Andreani", beyonix: "BEYONIX" }
+const CARRIERS = Object.keys(DISPATCH_RECORD_CARRIERS) as DispatchRecordCarrier[]
+export const isDispatchRecordCarrier = (value: unknown): value is DispatchRecordCarrier => CARRIERS.some((carrier) => carrier === value)
+
 export const DISPATCH_RECORDS_PAGE_SIZE = 20
 
 export function dispatchToday(date = new Date()) {
@@ -54,16 +62,16 @@ export function dispatchToday(date = new Date()) {
  * resuelto (Entregado, Cancelado): Pendiente y Confirmado siguen visibles hasta
  * resolverse. Una fecha elegida a mano (`manualDate`) filtra todo.
  */
-export type DispatchRecordFilters = { date: string; manualDate: boolean; order: string; batch: string; user: string; state: string; kind: string }
-const TEXT_FILTERS = ["date", "order", "batch", "user", "state", "kind"] as const
+export type DispatchRecordFilters = { date: string; manualDate: boolean; order: string; batch: string; user: string; state: string; kind: string; carrier: string }
+const TEXT_FILTERS = ["date", "order", "batch", "user", "state", "kind", "carrier"] as const
 
 export function defaultDispatchRecordFilters(today = dispatchToday()): DispatchRecordFilters {
-  return { date: today, manualDate: false, order: "", batch: "", user: "", state: "", kind: "" }
+  return { date: today, manualDate: false, order: "", batch: "", user: "", state: "", kind: "", carrier: "" }
 }
 
 /** Limpiar: todo vacío, incluida la fecha (sin fecha = todas las fechas). */
 export function clearedDispatchRecordFilters(): DispatchRecordFilters {
-  return { date: "", manualDate: true, order: "", batch: "", user: "", state: "", kind: "" }
+  return { date: "", manualDate: true, order: "", batch: "", user: "", state: "", kind: "", carrier: "" }
 }
 
 export function dispatchRecordParams(filters: DispatchRecordFilters, page: number) {
@@ -102,6 +110,7 @@ export function restoreDispatchRecordsView(raw: string | null, today = dispatchT
   if (view.filters.date && !/^\d{4}-\d{2}-\d{2}$/.test(view.filters.date)) view.filters.date = today
   if (view.filters.state && !isDispatchRecordState(view.filters.state)) view.filters.state = ""
   if (view.filters.kind && !isDispatchRecordKind(view.filters.kind)) view.filters.kind = ""
+  if (view.filters.carrier && !isDispatchRecordCarrier(view.filters.carrier)) view.filters.carrier = ""
   if (typeof parsed.page === "number" && Number.isSafeInteger(parsed.page) && parsed.page >= 1 && parsed.page <= 100000) view.page = parsed.page
   return view
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { dispatchLocationFromSearch, dispatchLocationHref, parseDispatchLocation } from "./dispatch-location"
-import { defaultDispatchRecordFilters, dispatchRecordParams, dispatchToday, restoreDispatchRecordsView } from "./dispatch-records"
+import { clearedDispatchRecordFilters, defaultDispatchRecordFilters, dispatchRecordParams, dispatchToday, restoreDispatchRecordsView } from "./dispatch-records"
 
 test("URL estable de Despachos: pedido y Bulto sobreviven a refrescar y volver; ?tab viejo se ignora", () => {
   assert.deepEqual(dispatchLocationFromSearch("?tab=ready&order=11"), { orderId: 11, batchId: null })
@@ -16,10 +16,14 @@ test("URL estable de Despachos: pedido y Bulto sobreviven a refrescar y volver; 
 })
 
 test("filtros: fecha por defecto hoy, parámetros sin vacíos y restauración validada", () => {
-  assert.deepEqual(defaultDispatchRecordFilters("2026-10-22"), { date: "2026-10-22", manualDate: false, order: "", batch: "", user: "", state: "", kind: "" })
+  assert.deepEqual(defaultDispatchRecordFilters("2026-10-22"), { date: "2026-10-22", manualDate: false, order: "", batch: "", user: "", state: "", kind: "", carrier: "" })
   assert.match(dispatchToday(new Date("2026-10-23T02:30:00Z")), /^2026-10-22$/, "hoy en Buenos Aires")
   // Hoy por defecto sólo recorta lo resuelto; una fecha elegida a mano filtra todo.
-  assert.equal(dispatchRecordParams({ date: "2026-10-22", manualDate: false, order: " BX-1012 ", batch: "", user: "", state: "P", kind: "" }, 2), "page=2&date=2026-10-22&order=BX-1012&state=P&openAllDates=true")
+  assert.equal(dispatchRecordParams({ date: "2026-10-22", manualDate: false, order: " BX-1012 ", batch: "", user: "", state: "P", kind: "", carrier: "" }, 2), "page=2&date=2026-10-22&order=BX-1012&state=P&openAllDates=true")
+  // TRANSPORTISTA viaja al servidor con los demás filtros; Todos ("") no se envía.
+  assert.equal(dispatchRecordParams({ ...defaultDispatchRecordFilters("2026-10-22"), state: "P", carrier: "beyonix" }, 1), "page=1&date=2026-10-22&state=P&carrier=beyonix&openAllDates=true")
+  assert.equal(dispatchRecordParams({ ...clearedDispatchRecordFilters(), carrier: "andreani" }, 3), "page=3&carrier=andreani")
+  assert.equal(clearedDispatchRecordFilters().carrier, "", "Limpiar vuelve a Todos")
   // TIPO viaja al servidor junto con los demás filtros (la paginación es server-side).
   assert.equal(dispatchRecordParams({ ...defaultDispatchRecordFilters("2026-10-22"), state: "C", kind: "batch" }, 1), "page=1&date=2026-10-22&state=C&kind=batch&openAllDates=true")
   assert.equal(dispatchRecordParams({ ...defaultDispatchRecordFilters("2026-10-22"), date: "2026-10-20", manualDate: true, kind: "order" }, 1), "page=1&date=2026-10-20&kind=order")

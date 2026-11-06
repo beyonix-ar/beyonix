@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useEffect, useRef, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { CheckCircle2 } from "lucide-react"
@@ -35,8 +35,7 @@ function isCheckoutPaymentConfirmed(order: SupabasePedido | null) {
 }
 
 function CheckoutSuccessContent() {
-  const { clearCart } = useCart()
-  const hasClearedCartRef = useRef(false)
+  const { syncPurchasedCart } = useCart()
   const searchParams = useSearchParams()
   const isTransfer = searchParams.get("method") === "transferencia"
   const orderId = Number(searchParams.get("order_id"))
@@ -47,13 +46,6 @@ function CheckoutSuccessContent() {
   const [orderError, setOrderError] = useState("")
   const [sessionExpired, setSessionExpired] = useState(false)
   const paymentConfirmed = isCheckoutPaymentConfirmed(order)
-  // Transferencia: el carrito se conserva mientras el pago no esté confirmado
-  // ni informado con comprobante -- si la reserva vence, el cliente vuelve al
-  // inicio con su carrito intacto.
-  const shouldClearCart =
-    !isTransfer ||
-    paymentConfirmed ||
-    Boolean(order?.payment_proof_url || order?.payment_proof_uploaded_at)
   const successReturnUrl = `/checkout/success${
     searchParams.toString() ? `?${searchParams.toString()}` : ""
   }`
@@ -69,12 +61,15 @@ function CheckoutSuccessContent() {
       !order.payment_proof_url,
   )
 
+  // Llegar acá no vacía nada: el carrito descuenta sólo las compras que el
+  // servidor confirma como propias y pagadas (lib/cart/purchase-tracking.ts).
+  // Se revisa al entrar y cuando esta pantalla ve el pago confirmado.
   useEffect(() => {
-    if (!shouldClearCart || hasClearedCartRef.current) return
-
-    hasClearedCartRef.current = true
-    clearCart()
-  }, [clearCart, shouldClearCart])
+    void syncPurchasedCart()
+    // Al volver de Mercado Pago el webhook puede llegar unos segundos después.
+    const timers = [4_000, 12_000].map((delay) => window.setTimeout(() => void syncPurchasedCart(), delay))
+    return () => timers.forEach((timer) => window.clearTimeout(timer))
+  }, [syncPurchasedCart, paymentConfirmed])
 
   useEffect(() => {
     let active = true

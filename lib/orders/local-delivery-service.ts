@@ -32,9 +32,10 @@ import { isInTransitEmailObsolete, type LocalDeliveryOutcomeStatus } from "../sh
  *    `completed` cuando TODOS los ítems tienen garantía activa verificada.
  *    Email: reserva persistida → autorización condicional en base → envío →
  *    `completed`/`failed` explícitos, nunca borrando filas.
- * 3. Lo que falte se completa con "Reintentar avisos", que vuelve a leer el
- *    pedido, lo revalida (proveedor, pago, cancelación, reintegro) y sólo
- *    ejecuta los efectos de la etapa REAL actual.
+ * 3. Lo que falte lo completa solo el cron /api/cron/local-delivery-effects
+ *    (recoverLocalDeliveryEffects, con tope de fallos) o, a mano, "Reintentar
+ *    avisos". Ambos vuelven a leer el pedido, lo revalidan (proveedor, pago,
+ *    cancelación, reintegro) y sólo ejecutan los efectos de la etapa REAL actual.
  *
  * Un candado por pedido evita que dos pedidos al mismo proceso corran a la vez
  * (el segundo recibe conflicto, sin efectos). Entre procesos, sólo la reserva
@@ -381,11 +382,28 @@ async function runWarrantyEffect(
   return true
 }
 
+/**
+ * Fallos registrados (`failed`) a partir de los cuales el reintento automático
+ * deja de intentar un efecto: sigue pendiente, visible en Despachos y con
+ * reintento manual. Con el cron cada 15 minutos equivale a ~1,5 h de intentos.
+ */
+export const LOCAL_DELIVERY_AUTO_RETRY_MAX_FAILURES = 6
+
+/** Efectos sin completar cuyo reintento automático se agotó. */
+export function getExhaustedLocalDeliveryEffects(records: readonly LocalDeliveryEffectRecord[]): Set<LocalDeliveryEffect> {
+  const done = new Set(records.filter((row) => row.state === "completed" || row.state === "superseded").map((row) => row.effect))
+  const failures = new Map<LocalDeliveryEffect, number>()
+  for (const row of records) {
+    if (row.state === "failed" && !done.has(row.effect)) failures.set(row.effect, (failures.get(row.effect) ?? 0) + 1)
+  }
+  return new Set([...failures].filter(([, count]) => count >= LOCAL_DELIVERY_AUTO_RETRY_MAX_FAILURES).map(([effect]) => effect))
+}
+
 /** Ejecuta sólo los efectos pendientes de la etapa actual. Devuelve los que siguen pendientes. */
 export async function runLocalDeliveryEffects(
   deps: LocalDeliveryServiceDeps,
   order: LocalDeliveryOrderRecord,
-  { previousEstado }: { previousEstado?: string | null } = {},
+  { previousEstado, skip }: { previousEstado?: string | null; skip?: ReadonlySet<LocalDeliveryEffect> } = {},
 ): Promise<LocalDeliveryEffect[]> {
   const stage = getLocalDeliveryStage(order)
   const effects = LOCAL_DELIVERY_EFFECTS_BY_STAGE[stage]
@@ -405,6 +423,10 @@ export async function runLocalDeliveryEffects(
   const pending: LocalDeliveryEffect[] = []
   for (const effect of effects) {
     const status = statuses.get(effect)
+    if (skip?.has(effect) && !isDone(status)) {
+      pending.push(effect)
+      continue
+    }
     try {
       if (effect === "delivered_warranty") {
         if (!await runWarrantyEffect(deps, order, status)) pending.push(effect)
@@ -432,7 +454,7 @@ export async function runLocalDeliveryEffects(
 
 function pendingWarning(pending: LocalDeliveryEffect[]) {
   return pending.length
-    ? `Quedó pendiente: ${[...new Set(pending.map((effect) => LOCAL_DELIVERY_EFFECT_LABELS[effect]))].join(", ")}. Tocá "Reintentar avisos".`
+    ? `Quedó pendiente: ${[...new Set(pending.map((effect) => LOCAL_DELIVERY_EFFECT_LABELS[effect]))].join(", ")}. Se reintenta automáticamente; también podés usar "Reintentar avisos".`
     : undefined
 }
 
@@ -497,6 +519,31 @@ export function retryLocalDeliveryEffects(
     return {
       status: 200,
       body: { ok: true, order: { id: orderId, estado: order.estado ?? "", stage }, pendingEffects: pending, warning: pendingWarning(pending) },
+    }
+  })
+}
+
+/**
+ * Reintento automático (cron): misma revalidación y mismos efectos que
+ * "Reintentar avisos", bajo el mismo candado por pedido (si un operador o el
+ * cadete lo está tocando, responde conflicto y se reintenta en la próxima
+ * corrida). Un efecto con LOCAL_DELIVERY_AUTO_RETRY_MAX_FAILURES fallos ya no
+ * se intenta solo: queda pendiente y visible para Despachos.
+ */
+export function recoverLocalDeliveryEffects(
+  deps: LocalDeliveryServiceDeps,
+  orderId: number,
+): Promise<LocalDeliveryResult> {
+  return withOrderLock(orderId, async () => {
+    const order = await deps.loadOrder(orderId)
+    if (!order) return { status: 404, body: { error: "No encontramos el pedido." } }
+    const retryError = getLocalDeliveryRetryError(order)
+    if (retryError) return { status: 409, body: { error: retryError } }
+    const skip = getExhaustedLocalDeliveryEffects(await deps.loadEffectRecords(orderId))
+    const pending = await runLocalDeliveryEffects(deps, order, { skip })
+    return {
+      status: 200,
+      body: { ok: true, order: { id: orderId, estado: order.estado ?? "", stage: getLocalDeliveryStage(order) }, pendingEffects: pending },
     }
   })
 }
