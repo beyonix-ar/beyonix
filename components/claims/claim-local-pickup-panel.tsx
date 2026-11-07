@@ -7,10 +7,14 @@ import { AdminButton, AdminGhostButton, AdminSecondaryButton, adminControlClassN
 import { AdminDatePicker } from "@/app/admin/components/admin-date-picker"
 import { HelpTip } from "@/components/claims/help-tip"
 import { getOrCreateIdempotencyAttempt, type IdempotencyAttempt } from "@/lib/business/idempotency-attempt"
-import type { ClaimLocalPickupAdminView } from "@/lib/orders/claim-local-pickup"
+import {
+  CLAIM_LOCAL_LOSS_NOTE_MIN,
+  CLAIM_LOCAL_RECEPTION_INCIDENT_TYPES,
+  type ClaimLocalPickupAdminView,
+  type ClaimLocalReceptionIncidentType,
+} from "@/lib/orders/claim-local-pickup"
 import {
   CLAIM_INCIDENT_LABELS,
-  type ClaimIncidentType,
   type ClaimLogisticsItemView,
   type ClaimLogisticsMethodChoice,
 } from "@/lib/orders/claim-shipment-view"
@@ -18,9 +22,10 @@ import { supabase } from "@/lib/supabase/client"
 import type { SupabaseOrderClaim } from "@/lib/supabase/types"
 
 type LocalMethod = "retiro_cadete" | "sin_devolucion_local"
-type PickupForm = "schedule" | "collected" | "incident" | "cancel" | "receive"
+type PickupForm = "schedule" | "collected" | "incident" | "cancel" | "receive" | "loss"
 
-const INCIDENT_TYPES = Object.keys(CLAIM_INCIDENT_LABELS) as ClaimIncidentType[]
+const clampUnits = (value: string, max: number, min = 0) => Math.max(min, Math.min(max, Math.trunc(Number(value) || 0)))
+const unitsText = (count: number) => `${count} ${count === 1 ? "unidad" : "unidades"}`
 
 const todayInArgentina = () =>
   new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(new Date())
@@ -151,7 +156,9 @@ export function ClaimLocalPickupPanel({
   const [notes, setNotes] = useState("")
   const [agreedFor, setAgreedFor] = useState("")
   const [received, setReceived] = useState<Record<number, number>>({})
-  const [incidents, setIncidents] = useState<Record<number, ClaimIncidentType | "">>({})
+  const [incidents, setIncidents] = useState<Record<number, ClaimLocalReceptionIncidentType | "">>({})
+  const [incidentUnits, setIncidentUnits] = useState<Record<number, number>>({})
+  const [lost, setLost] = useState<Record<number, number>>({})
   const [confirming, setConfirming] = useState(false)
   const attemptRef = useRef<IdempotencyAttempt | null>(null)
 
@@ -167,6 +174,11 @@ export function ClaimLocalPickupPanel({
     if (next === "receive") {
       setReceived(Object.fromEntries(expected.map((item) => [item.orderItemId, item.pending])))
       setIncidents({})
+      setIncidentUnits({})
+      attemptRef.current = null
+    }
+    if (next === "loss") {
+      setLost({})
       attemptRef.current = null
     }
   }
@@ -175,32 +187,46 @@ export function ClaimLocalPickupPanel({
     setConfirming(false)
   }
 
-  const receptionPayload = expected.map((item) => ({
-    orderItemId: item.orderItemId,
-    quantity: Math.max(0, Math.min(item.pending, received[item.orderItemId] ?? 0)),
-    incidentType: incidents[item.orderItemId] || undefined,
-  }))
+  // La novedad sólo recae sobre unidades recibidas: lo que no llegó queda pendiente (faltante), sin novedad.
+  const receptionPayload = expected.map((item) => {
+    const quantity = Math.max(0, Math.min(item.pending, received[item.orderItemId] ?? 0))
+    const incidentType = quantity > 0 ? incidents[item.orderItemId] || undefined : undefined
+    return {
+      orderItemId: item.orderItemId,
+      quantity,
+      ...(incidentType ? { incidentType, incidentQuantity: Math.max(1, Math.min(quantity, incidentUnits[item.orderItemId] ?? quantity)) } : {}),
+    }
+  })
   const receivedTotal = receptionPayload.reduce((sum, item) => sum + item.quantity, 0)
   const expectedTotal = expected.reduce((sum, item) => sum + item.pending, 0)
   const hasIncident = receptionPayload.some((item) => item.incidentType)
-  const receptionValid = (receivedTotal > 0 || hasIncident) && (!hasIncident || notes.trim().length >= 5)
-  const notesMin = form === "cancel" ? 10 : form === "incident" ? 5 : form === "receive" && hasIncident ? 5 : 0
+  const receptionValid = receivedTotal > 0 && (!hasIncident || notes.trim().length >= 5)
+  const lossPayload = expected
+    .map((item) => ({ orderItemId: item.orderItemId, quantity: Math.max(0, Math.min(item.pending, lost[item.orderItemId] ?? 0)) }))
+    .filter((item) => item.quantity > 0)
+  const lostTotal = lossPayload.reduce((sum, item) => sum + item.quantity, 0)
+  const notesMin = form === "cancel" ? 10 : form === "incident" ? 5 : form === "receive" && hasIncident ? 5 : form === "loss" ? CLAIM_LOCAL_LOSS_NOTE_MIN : 0
+
+  // Mismos datos = misma clave: un reintento tras un timeout nunca registra dos veces.
+  const postWithKey = (payload: Record<string, unknown>) => {
+    const attempt = getOrCreateIdempotencyAttempt(attemptRef.current, { claimId, ...payload }, "claim-local-pickup")
+    attemptRef.current = attempt
+    void post({ ...payload, idempotencyKey: attempt.key }, () => {
+      attemptRef.current = null
+      close()
+    })
+  }
 
   const submit = () => {
     if (!form) return
-    if (form === "receive") {
+    if (form === "receive" || form === "loss") {
       if (!confirming) {
         setConfirming(true)
         return
       }
-      const payload = { action: "receive", items: receptionPayload, notes: notes.trim() || undefined }
-      // Mismos datos = misma clave: un reintento tras un timeout nunca registra dos veces.
-      const attempt = getOrCreateIdempotencyAttempt(attemptRef.current, { claimId, ...payload }, "claim-local-pickup")
-      attemptRef.current = attempt
-      void post({ ...payload, idempotencyKey: attempt.key }, () => {
-        attemptRef.current = null
-        close()
-      })
+      postWithKey(form === "receive"
+        ? { action: "receive", items: receptionPayload, notes: notes.trim() || undefined }
+        : { action: "loss", items: lossPayload, notes: notes.trim(), confirmed: true })
       return
     }
     if (form === "cancel" && !confirming) {
@@ -224,6 +250,7 @@ export function ClaimLocalPickupPanel({
         {pickup.pendingUnits > 0 && pickup.status !== "pendiente_coordinacion" && pickup.status !== "coordinado" && (
           <span>· faltan {pickup.pendingUnits} {pickup.pendingUnits === 1 ? "unidad" : "unidades"}</span>
         )}
+        {pickup.lostUnits > 0 && <span data-claim-local-pickup-lost>· {unitsText(pickup.lostUnits)} con pérdida confirmada en traslado</span>}
       </p>
       {pickup.incident && <p role="status" className="admin-claim-logistics-warning" data-claim-local-pickup-incident>Incidencia: {pickup.incident}</p>}
       {pickup.status === "retirado" && (
@@ -252,6 +279,11 @@ export function ClaimLocalPickupPanel({
               {pickup.collected ? "Registrar incidencia" : "Retiro fallido"}
             </AdminGhostButton>
           )}
+          {pickup.canConfirmLoss && (
+            <AdminGhostButton size="sm" disabled={busy} onClick={() => open("loss")} data-claim-focus="local_pickup_loss">
+              Confirmar pérdida en traslado
+            </AdminGhostButton>
+          )}
           {pickup.canCancel && (
             <AdminGhostButton size="sm" disabled={busy} onClick={() => open("cancel")} data-claim-focus="cancel_local_pickup">Cancelar retiro</AdminGhostButton>
           )}
@@ -272,47 +304,100 @@ export function ClaimLocalPickupPanel({
           {form === "cancel" && <p className="admin-claim-logistics-hint">Sólo antes de que el cadete retire el producto. Después podés elegir otra opción.</p>}
           {form === "receive" && (
             <div className="grid gap-2" data-claim-local-reception>
-              <p className="admin-claim-logistics-hint">Registrá lo que el cadete entregó en BEYONIX. Lo que no llegue queda pendiente; si falta o llegó dañado, elegí la novedad y explicala.</p>
+              <p className="admin-claim-logistics-hint">Registrá sólo lo que el cadete entregó en BEYONIX. Lo que no llegó queda pendiente (todavía puede llegar). Si algo de lo recibido llegó dañado o distinto, elegí la novedad y explicala.</p>
               <ul className="grid gap-2">
-                {expected.map((item) => (
-                  <li key={item.orderItemId} className="grid gap-1.5 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-end" data-claim-local-reception-item={item.orderItemId}>
-                    <div className="min-w-0">
-                      <p className="font-semibold text-white">{itemLabel(item.orderItemId)}</p>
-                      <p className="admin-claim-logistics-hint">Esperadas: {item.pending}</p>
-                    </div>
-                    <label className="grid gap-1">
-                      <span className="admin-claim-logistics-label">Recibidas</span>
-                      <input type="number" min={0} max={item.pending} inputMode="numeric"
-                        aria-label={`Unidades recibidas · ${itemLabel(item.orderItemId)}`}
-                        className={`${adminControlClassName} admin-claim-compact-input w-24`}
-                        value={received[item.orderItemId] ?? 0}
-                        onChange={(event) => {
-                          const value = Math.max(0, Math.min(item.pending, Math.trunc(Number(event.target.value) || 0)))
-                          setReceived((current) => ({ ...current, [item.orderItemId]: value }))
-                          setConfirming(false)
-                        }} />
-                    </label>
-                    <label className="grid gap-1">
-                      <span className="admin-claim-logistics-label">Novedad</span>
-                      <select className={`${adminControlClassName} admin-claim-compact-input`} value={incidents[item.orderItemId] ?? ""}
-                        aria-label={`Novedad · ${itemLabel(item.orderItemId)}`}
-                        onChange={(event) => {
-                          setIncidents((current) => ({ ...current, [item.orderItemId]: event.target.value as ClaimIncidentType | "" }))
-                          setConfirming(false)
-                        }}>
-                        <option value="">Sin novedad</option>
-                        {INCIDENT_TYPES.map((type) => <option key={type} value={type}>{CLAIM_INCIDENT_LABELS[type]}</option>)}
-                      </select>
-                    </label>
-                  </li>
-                ))}
+                {receptionPayload.map((line) => {
+                  const pending = expected.find((item) => item.orderItemId === line.orderItemId)?.pending ?? 0
+                  const label = itemLabel(line.orderItemId)
+                  return (
+                    <li key={line.orderItemId} className="grid gap-1.5 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] sm:items-end" data-claim-local-reception-item={line.orderItemId}>
+                      <div className="min-w-0">
+                        <p className="font-semibold text-white">{label}</p>
+                        <p className="admin-claim-logistics-hint">
+                          Esperadas: {pending}
+                          {line.quantity < pending && <span data-claim-local-reception-missing> · quedan pendientes {pending - line.quantity}</span>}
+                        </p>
+                      </div>
+                      <label className="grid gap-1">
+                        <span className="admin-claim-logistics-label">Recibidas</span>
+                        <input type="number" min={0} max={pending} inputMode="numeric"
+                          aria-label={`Unidades recibidas · ${label}`}
+                          className={`${adminControlClassName} admin-claim-compact-input w-24`}
+                          value={received[line.orderItemId] ?? 0}
+                          onChange={(event) => {
+                            const value = clampUnits(event.target.value, pending)
+                            setReceived((current) => ({ ...current, [line.orderItemId]: value }))
+                            setConfirming(false)
+                          }} />
+                      </label>
+                      <label className="grid gap-1">
+                        <span className="admin-claim-logistics-label">Novedad en lo recibido</span>
+                        <select className={`${adminControlClassName} admin-claim-compact-input`} value={line.incidentType ?? ""}
+                          aria-label={`Novedad en lo recibido · ${label}`} disabled={line.quantity === 0}
+                          onChange={(event) => {
+                            setIncidents((current) => ({ ...current, [line.orderItemId]: event.target.value as ClaimLocalReceptionIncidentType | "" }))
+                            setConfirming(false)
+                          }}>
+                          <option value="">Sin novedad</option>
+                          {CLAIM_LOCAL_RECEPTION_INCIDENT_TYPES.map((type) => <option key={type} value={type}>{CLAIM_INCIDENT_LABELS[type]}</option>)}
+                        </select>
+                      </label>
+                      {line.incidentType && line.quantity > 1 && (
+                        <label className="grid gap-1">
+                          <span className="admin-claim-logistics-label">Unidades con novedad</span>
+                          <input type="number" min={1} max={line.quantity} inputMode="numeric"
+                            aria-label={`Unidades recibidas con novedad · ${label}`}
+                            className={`${adminControlClassName} admin-claim-compact-input w-24`}
+                            value={line.incidentQuantity}
+                            onChange={(event) => {
+                              const value = clampUnits(event.target.value, line.quantity, 1)
+                              setIncidentUnits((current) => ({ ...current, [line.orderItemId]: value }))
+                              setConfirming(false)
+                            }} />
+                        </label>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
+          {form === "loss" && (
+            <div className="grid gap-2" data-claim-local-loss>
+              <p className="admin-claim-logistics-hint">
+                Sólo para unidades que el cadete retiró y que se confirmó que nunca van a llegar a BEYONIX. No se registran como recibidas ni inspeccionadas, no vuelven a stock y no generan reintegros ni reemplazos por sí solas: la resolución sigue con sus reglas.
+              </p>
+              <ul className="grid gap-2">
+                {expected.map((item) => {
+                  const label = itemLabel(item.orderItemId)
+                  return (
+                    <li key={item.orderItemId} className="grid gap-1.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end" data-claim-local-loss-item={item.orderItemId}>
+                      <div className="min-w-0">
+                        <p className="font-semibold text-white">{label}</p>
+                        <p className="admin-claim-logistics-hint">Pendientes de llegar: {item.pending}</p>
+                      </div>
+                      <label className="grid gap-1">
+                        <span className="admin-claim-logistics-label">Perdidas en traslado</span>
+                        <input type="number" min={0} max={item.pending} inputMode="numeric"
+                          aria-label={`Unidades perdidas en traslado · ${label}`}
+                          className={`${adminControlClassName} admin-claim-compact-input w-24`}
+                          value={lost[item.orderItemId] ?? 0}
+                          onChange={(event) => {
+                            const value = clampUnits(event.target.value, item.pending)
+                            setLost((current) => ({ ...current, [item.orderItemId]: value }))
+                            setConfirming(false)
+                          }} />
+                      </label>
+                    </li>
+                  )
+                })}
               </ul>
             </div>
           )}
           {form !== "schedule" && (
             <label className="grid gap-1">
               <span className="admin-claim-logistics-label">
-                {form === "incident" ? "Qué pasó" : form === "cancel" ? "Motivo" : "Observación"}
+                {form === "incident" ? "Qué pasó" : form === "cancel" || form === "loss" ? "Motivo" : "Observación"}
                 {notesMin ? ` (mínimo ${notesMin} caracteres)` : " (opcional)"}
               </span>
               <textarea className={`${adminControlClassName} admin-claim-compact-textarea`} value={notes} maxLength={1000} rows={2}
@@ -322,7 +407,12 @@ export function ClaimLocalPickupPanel({
           {confirming && form === "receive" && (
             <p role="alert" className="admin-claim-logistics-warning" data-claim-local-reception-confirm>
               Vas a registrar {receivedTotal} de {expectedTotal} {expectedTotal === 1 ? "unidad esperada" : "unidades esperadas"} como recibidas en BEYONIX
-              {receivedTotal < expectedTotal ? "; el resto queda pendiente" : ""}. Quedan pendientes de inspección (no vuelven solas a stock). ¿Confirmás?
+              {receivedTotal < expectedTotal ? "; el resto queda pendiente de llegar" : ""}. Quedan pendientes de inspección (no vuelven solas a stock). ¿Confirmás?
+            </p>
+          )}
+          {confirming && form === "loss" && (
+            <p role="alert" className="admin-claim-logistics-warning" data-claim-local-loss-confirm>
+              Vas a confirmar {unitsText(lostTotal)} como pérdida definitiva en el traslado. No se registra como recibida, no vuelve a stock y no se puede deshacer desde acá. Queda auditada con tu usuario, la fecha y el motivo. ¿Confirmás?
             </p>
           )}
           {confirming && form === "cancel" && (
@@ -330,8 +420,10 @@ export function ClaimLocalPickupPanel({
           )}
           <div className="flex flex-wrap gap-2">
             <AdminButton size="sm" variant="primary" onClick={submit}
-              disabled={pending || notes.trim().length < notesMin || (form === "schedule" && !agreedFor) || (form === "receive" && !receptionValid)}>
-              {pending ? "Guardando..." : confirming ? "Sí, confirmar" : form === "receive" ? "Confirmar recepción" : "Guardar"}
+              disabled={pending || notes.trim().length < notesMin || (form === "schedule" && !agreedFor) || (form === "receive" && !receptionValid) ||
+                (form === "loss" && lostTotal === 0)}>
+              {pending ? "Guardando..." : confirming ? form === "loss" ? "Sí, confirmar pérdida" : "Sí, confirmar"
+                : form === "receive" ? "Confirmar recepción" : form === "loss" ? "Confirmar pérdida" : "Guardar"}
             </AdminButton>
             <AdminSecondaryButton size="sm" disabled={pending} onClick={close}>Cancelar</AdminSecondaryButton>
           </div>

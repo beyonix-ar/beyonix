@@ -47,5 +47,13 @@ test("destino por ítem: unidades del reclamo o recepción acotada; lo no recibi
     claimedQuantity: 3, restockedQuantity: 9, writtenOffQuantity: 9, includeNotReturned: true,
     units: [{ role: "original", location: "reincorporada_stock" }, { role: "original", location: "baja" },
       { role: "original", location: "conservada_cliente" }, { role: "reemplazo", location: "baja" }],
-  }), { restocked: 1, writtenOff: 1, keptByCustomer: 1 }, "con unidades manda el reclamo, no el acumulado del ítem")
+  }), { restocked: 1, writtenOff: 1, keptByCustomer: 1, lostInTransit: 0 }, "con unidades manda el reclamo, no el acumulado del ítem")
+  // Retiro por cadete: la pérdida confirmada en traslado nunca figura como stock, baja ni "en poder del cliente".
+  const lost = getClaimItemOutcomeCounts({
+    claimedQuantity: 2, includeNotReturned: true,
+    units: [{ role: "original", location: "reincorporada_stock" }, { role: "original", location: "perdida_traslado" }],
+  })
+  assert.deepEqual(lost, { restocked: 1, writtenOff: 0, keptByCustomer: 0, lostInTransit: 1 })
+  assert.deepEqual(getClaimProductOutcomeLines(lost), ["1 unidad reincorporada al stock", "1 unidad con pérdida confirmada en traslado"])
+  assert.equal(getClaimProductOutcomeTitle({ restocked: 0, writtenOff: 0, lostInTransit: 1 }), "Pérdida confirmada en traslado")
 })

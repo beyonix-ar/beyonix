@@ -5,6 +5,7 @@ import { getAdminClaimWizard } from "./admin-claim-wizard.ts"
 import { getCustomerLocalPickupView, type ClaimLocalPickupSource } from "./claim-local-pickup.ts"
 import { getAdminClaimLogisticsView, getCustomerClaimHeadline, type ClaimUnitSource } from "./claim-shipment-view.ts"
 import { getCustomerClaimSummary } from "./customer-claim-experience.ts"
+import { deriveFinancialReturnContext, deriveMerchandiseSituation } from "./financial-resolution.ts"
 
 // Envío BEYONIX: devolución por retiro de cadete dentro del mismo reclamo.
 // Las reglas reales viven en la base (claim-local-pickups-sql.test.ts); acá,
@@ -134,7 +135,7 @@ test("cliente: mensaje simple, fecha sólo si se acordó, nunca Andreani ni deta
   const pending = getCustomerClaimSummary({ ...base, order_claim_local_pickups: [pickup("pendiente_coordinacion")] })
   assert.deepEqual([pending.title, pending.lines], ["Coordinaremos el retiro de tu producto", ["Coordinaremos con vos el retiro del producto en tu domicilio."]])
   const failed = getCustomerClaimSummary({ ...base, order_claim_local_pickups: [pickup("incidencia", { incident_note: "Nota interna del cadete" })] })
-  assert.equal(failed.title, "Coordinaremos el retiro de tu producto")
+  assert.equal(failed.title, "Retiro con inconveniente")
   assert.doesNotMatch(JSON.stringify(failed), /Nota interna/)
   const scheduled = getCustomerClaimSummary({ ...base, order_claim_local_pickups: [pickup("coordinado", { agreed_for: "2026-11-08" })] })
   assert.equal(scheduled.title, "Retiro coordinado para el 08/11/2026")
@@ -151,4 +152,91 @@ test("cliente: mensaje simple, fecha sólo si se acordó, nunca Andreani ni deta
   assert.equal(getCustomerLocalPickupView(pickup("cancelado", { cancelled_at: "z" })), null)
   assert.equal(getCustomerClaimHeadline({ ...base, order_claim_local_pickups: [pickup("coordinado", { agreed_for: "2026-11-08" })] }), "Retiro de tu producto coordinado")
   assert.equal(getCustomerClaimHeadline({ ...base, order_claim_local_pickups: [pickup("recibido", { picked_up_at: "x", received_at: "y" })] }), "Recibimos tu producto: preparando tu reemplazo")
+})
+
+test("H4 cliente: estados verdaderos; nunca 'recibido' de lo que no llegó ni 'coordinando' después del retiro", () => {
+  const base = { status: "aprobado", resolution: "cambio_producto", created_at: "2026-11-05T10:00:00Z", order_claim_shipments: [] }
+  const collectedAt = { picked_up_at: "2026-11-08T13:00:00Z" }
+  const summary = (row: ClaimLocalPickupSource) => getCustomerClaimSummary({ ...base, order_claim_local_pickups: [row] })
+  const headline = (row: ClaimLocalPickupSource) => getCustomerClaimHeadline({ ...base, order_claim_local_pickups: [row] })
+
+  const failedPickup = pickup("incidencia", { incident_note: "Nota interna" })
+  assert.equal(summary(failedPickup).title, "Retiro con inconveniente")
+  assert.equal(headline(failedPickup), "Retiro con inconveniente")
+  const transit = pickup("incidencia", { ...collectedAt, incident_note: "Nota interna del cadete" })
+  assert.equal(summary(transit).title, "Incidencia durante el traslado")
+  assert.equal(headline(transit), "Incidencia durante el traslado")
+  assert.doesNotMatch(JSON.stringify([summary(transit), headline(transit)]), /Coordina|Nota interna/)
+
+  const partial = pickup("recibido_parcial", { ...collectedAt, received_at: "2026-11-08T15:00:00Z" })
+  assert.equal(getCustomerLocalPickupView(partial)?.statusLabel, "Recepción parcial")
+  assert.equal(summary(partial).title, "Recibimos parte de tu devolución")
+  assert.equal(headline(partial), "Recibimos parte de tu devolución")
+
+  for (const lost of [
+    pickup("resuelto_con_perdida", { ...collectedAt, loss_confirmed_at: "2026-11-09T10:00:00Z" }),
+    pickup("resuelto_con_perdida", { ...collectedAt, received_at: "2026-11-08T15:00:00Z", loss_confirmed_at: "2026-11-09T10:00:00Z" }),
+  ]) {
+    const lostView = getCustomerLocalPickupView(lost)
+    assert.equal(lostView?.statusLabel, "Incidencia durante el traslado")
+    assert.equal(summary(lost).title, "Resolución en proceso")
+    assert.equal(headline(lost), "Resolución en proceso")
+    const text = JSON.stringify([lostView, summary(lost), headline(lost)])
+    assert.doesNotMatch(text, /Recibimos tu producto|Recibido en BEYONIX|pérdida confirmada|perdida_traslado|cadete/i)
+    assert.match(text, /No tenés que hacer nada/)
+  }
+  assert.match(JSON.stringify(getCustomerLocalPickupView(pickup("resuelto_con_perdida", { ...collectedAt, received_at: "x", loss_confirmed_at: "y" }))),
+    /Recibimos parte de tu devolución/)
+})
+
+test("H1 Admin: pérdida confirmada en traslado resuelve la recepción sin simular recepción ni inspección", () => {
+  const collected = { picked_up_at: "2026-11-06T13:00:00Z" }
+  // Retirado y con unidades pendientes: se puede recibir o confirmar la pérdida.
+  const inTransit = view({ units: [original(1, "recibida_beyonix"), original(2, "con_cliente")], pickups: [pickup("recibido_parcial", { ...collected, received_at: "y" })] })
+  assert.deepEqual(inTransit.localPickup && [inTransit.localPickup.canReceive, inTransit.localPickup.canConfirmLoss, inTransit.localPickup.statusLabel],
+    [true, true, "Recepción parcial"])
+  assert.equal(view({ units: [original(1, "con_cliente")], pickups: [pickup("coordinado", { agreed_for: "2026-11-08" })] }).localPickup?.canConfirmLoss, false, "antes del retiro, nunca")
+  const transitIncident = view({ units: [original(1, "con_cliente")], pickups: [pickup("incidencia", { ...collected, incident_note: "No llegó" })] })
+  assert.equal(transitIncident.localPickup?.statusLabel, "Incidencia durante el traslado")
+  assert.match(transitIncident.nextStep, /pérdida en traslado/)
+
+  // Todo perdido (reemplazo): sin recepción, sin inspección; sigue el reemplazo y el cierre.
+  const lostPickup = pickup("resuelto_con_perdida", { ...collected, loss_confirmed_at: "z" })
+  const allLost = view({ units: [original(1, "perdida_traslado"), original(2, "perdida_traslado")], pickups: [lostPickup] })
+  assert.equal(allLost.localPickup?.canReceive, false)
+  assert.equal(allLost.localPickup?.canConfirmLoss, false)
+  assert.equal(allLost.localPickup?.lostUnits, 2)
+  assert.equal(allLost.wizardStep, "replacement")
+  assert.equal(allLost.summary.inspection, "No aplica")
+  assert.ok(allLost.realEffects.includes("Pérdida confirmada en traslado: 2 unidades"))
+  assert.deepEqual(allLost.flow.checklist.find((item) => item.key === "received"),
+    { key: "received", label: "Recepción resuelta (con pérdida en traslado)", done: true })
+  const delivered = view({
+    units: [original(1, "perdida_traslado"), original(2, "perdida_traslado"), replacement(3, "entregada_cliente"), replacement(4, "entregada_cliente")],
+    pickups: [lostPickup],
+  })
+  assert.equal(delivered.canClose, true, "la pérdida salda el reemplazo entregado (igual que la base)")
+
+  // Recibido + perdido (reintegro): la unidad recibida sigue exigiendo inspección.
+  const lostAndReceived = pickup("resuelto_con_perdida", { ...collected, received_at: "y", loss_confirmed_at: "z" })
+  const mixed = view({ resolution: "reintegro_total", status: "reintegro_pendiente",
+    units: [original(1, "recibida_beyonix"), original(2, "perdida_traslado")], pickups: [lostAndReceived] })
+  assert.equal(mixed.wizardStep, "reception")
+  assert.equal(mixed.summary.inspection, "Pendiente")
+  const inspected = view({ resolution: "reintegro_total", status: "reintegro_pendiente",
+    units: [original(1, "reincorporada_stock"), original(2, "perdida_traslado")], pickups: [lostAndReceived] })
+  assert.equal(inspected.wizardStep, "execution")
+  assert.equal(inspected.summary.inspection, "Completa")
+})
+
+test("H1 dinero del pedido: una pérdida en traslado no espera una recepción imposible ni se informa como recibida", () => {
+  const context = (locations: string[], claimBlock: string | null = null) => deriveFinancialReturnContext({
+    handedOverAt: "2026-11-01T10:00:00Z", claimBlock, exceptionClaimIds: [],
+    units: locations.map((location) => ({ claimId: 9, role: "original", location })),
+  })
+  assert.equal(context(["reincorporada_stock", "perdida_traslado"]).reception, "lost_in_transit")
+  assert.equal(context(["perdida_traslado"]).reception, "lost_in_transit")
+  assert.equal(context(["reincorporada_stock", "baja"]).reception, "received")
+  assert.equal(context(["recibida_beyonix", "perdida_traslado"], "CLAIM_MONEY_RETURN_PENDING").reception, "pending", "lo recibido sigue esperando inspección")
+  assert.equal(deriveMerchandiseSituation({ dispatched: true, inspection: null, product: "return", reception: "lost_in_transit" }), "lost_in_transit")
 })

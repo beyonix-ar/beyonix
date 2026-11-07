@@ -37,6 +37,8 @@ export type ClaimUnitLocation =
   | "reincorporada_stock"
   | "baja"
   | "conservada_cliente"
+  /** Retiro por cadete (Envío BEYONIX): retirada y confirmada como perdida en el traslado. Final. */
+  | "perdida_traslado"
   | "reservada"
   | "entregada_cliente"
 export type ClaimIncidentType =
@@ -173,6 +175,7 @@ export const CLAIM_UNIT_LOCATION_LABELS: Record<ClaimUnitLocation, string> = {
   reincorporada_stock: "Reincorporada a stock",
   baja: "Dada de baja",
   conservada_cliente: "Conservada por el cliente",
+  perdida_traslado: "Pérdida confirmada en traslado",
   reservada: "Reservada en BEYONIX (fuera de stock vendible)",
   entregada_cliente: "Entregada al cliente",
 }
@@ -644,6 +647,9 @@ function adminLegView(source: ClaimShipmentAdminSource, units: ClaimUnitSource[]
   }
 }
 
+/** Originales cuya devolución quedó resuelta (igual que el cierre en guard_order_claim_logistics). */
+const SETTLED_ORIGINAL_LOCATIONS: ClaimUnitLocation[] = ["reincorporada_stock", "baja", "conservada_cliente", "perdida_traslado"]
+
 function countBy(units: ClaimUnitSource[], role: ClaimUnitRole, predicate: (unit: ClaimUnitSource) => boolean = () => true) {
   return units.filter((unit) => unit.role === role && predicate(unit)).length
 }
@@ -672,7 +678,7 @@ export function canCloseClaimLogistics(shipments: ClaimShipmentAdminSource[], un
   return itemIds.every((itemId) => {
     const itemUnits = units.filter((unit) => unit.order_item_id === itemId)
     const delivered = countBy(itemUnits, "reemplazo", (unit) => unit.location === "entregada_cliente")
-    const settled = countBy(itemUnits, "original", (unit) => ["reincorporada_stock", "baja", "conservada_cliente"].includes(unit.location))
+    const settled = countBy(itemUnits, "original", (unit) => SETTLED_ORIGINAL_LOCATIONS.includes(unit.location))
     return delivered <= settled
   })
 }
@@ -832,6 +838,7 @@ export function getAdminClaimLogisticsView(input: {
   effectCount("original", ["en_andreani"], "Producto original en viaje con Andreani")
   effectCount("original", ["recibida_beyonix"], "Recepción registrada")
   effectCount("original", ["reincorporada_stock", "baja"], "Inspección registrada")
+  effectCount("original", ["perdida_traslado"], "Pérdida confirmada en traslado")
   if (incidentOpen) effects.push(reviewLeg ? "Evento de Andreani pendiente de revisión" : "Problema de inspección abierto")
   if (creditNoteActive) effects.push("Nota de crédito emitida o en proceso")
   if (activeLocalPickup) {
@@ -900,7 +907,7 @@ export function getAdminClaimLogisticsView(input: {
         : "Confirmar entrega del reemplazo fuera de Andreani", 10)
       // Sólo cuando bloquea el cierre: reemplazo entregado sin original devuelto.
       const unsettledDeliveries = countBy(itemUnits, "reemplazo", (unit) => unit.location === "entregada_cliente") -
-        countBy(itemUnits, "original", (unit) => ["reincorporada_stock", "baja", "conservada_cliente"].includes(unit.location))
+        countBy(itemUnits, "original", (unit) => SETTLED_ORIGINAL_LOCATIONS.includes(unit.location))
       push("waive_original", "original", Math.min(unsettledDeliveries,
         countBy(itemUnits, "original", (unit) => unit.location === "con_cliente" && Boolean(legClosedFor(unit)))),
         "Excepción: el cliente conserva el producto original", 10)
@@ -917,7 +924,7 @@ export function getAdminClaimLogisticsView(input: {
 
   // Envío BEYONIX: el retiro abierto (coordinado o con el cadete) también frena el cierre.
   const localPickupView = getClaimLocalPickupAdminView(activeLocalPickup, units, { closed })
-  const localPickupOpen = Boolean(activeLocalPickup && activeLocalPickup.status !== "recibido")
+  const localPickupOpen = Boolean(activeLocalPickup && activeLocalPickup.status !== "recibido" && activeLocalPickup.status !== "resuelto_con_perdida")
   const canClose = canCloseClaimLogistics(shipments, units) && !localPickupOpen
   const legView = current ? adminLegView(current, units) : null
   // Reemplazo local (sin Andreani): después de inspeccionar el original o con
@@ -946,7 +953,7 @@ export function getAdminClaimLogisticsView(input: {
     nextStep = isChange
       ? "Elegí si el producto vuelve a BEYONIX antes de enviar el reemplazo."
       : "Si el producto tiene que volver, generá la devolución antes del reintegro o el saldo."
-  } else if (localPickupView && localPickupView.pendingUnits > 0 && localPickupView.status !== "recibido" && !has("original", ["recibida_beyonix"])) {
+  } else if (localPickupView && localPickupView.pendingUnits > 0 && localPickupOpen && !has("original", ["recibida_beyonix"])) {
     nextStep = localPickupView.status === "pendiente_coordinacion"
       ? "Coordiná el retiro con el cliente desde la conversación del reclamo. La fecha es opcional."
       : localPickupView.status === "coordinado"
@@ -954,8 +961,10 @@ export function getAdminClaimLogisticsView(input: {
         : localPickupView.status === "retirado"
           ? "El cadete tiene el producto: confirmá la recepción cuando lo entregue en BEYONIX."
           : localPickupView.status === "recibido_parcial"
-            ? "Recepción parcial: confirmá lo que falta cuando llegue o registrá la incidencia."
-            : "Hay una incidencia en el retiro: volvé a coordinarlo o registrá cómo sigue."
+            ? "Recepción parcial: confirmá lo que falta cuando llegue. Si se confirma que no va a llegar, registrá la pérdida en traslado."
+            : localPickupView.collected
+              ? "Incidencia durante el traslado: confirmá la recepción si llega o, si se confirma que no va a llegar, registrá la pérdida en traslado."
+              : "Hay una incidencia en el retiro: volvé a coordinarlo o registrá cómo sigue."
   } else if (shipments.some((row) => row.creation_status === "manual_review")) {
     nextStep = "Resultado incierto con Andreani: verificá la operación y conciliala antes de continuar. No se reintenta sola."
   } else if (incidentOpen) {
@@ -1058,6 +1067,10 @@ export function getAdminClaimLogisticsView(input: {
     active.some((row) => row.direction === direction && row.creation_status === "created")
   const originalsReceived = originals.length > 0 &&
     originals.every((unit) => ["recibida_beyonix", "reincorporada_stock", "baja", "conservada_cliente"].includes(unit.location))
+  // Retiro por cadete con pérdida confirmada: la recepción quedó resuelta sin recibir esas unidades.
+  const originalsLost = countBy(units, "original", (unit) => unit.location === "perdida_traslado")
+  const localReceptionResolved = originals.length > 0 &&
+    originals.every((unit) => ["recibida_beyonix", "reincorporada_stock", "baja", "conservada_cliente", "perdida_traslado"].includes(unit.location))
   const claimClosed = input.status === "cerrado"
   const check = (key: string, label: string, done: boolean): ClaimChecklistItem => ({ key, label, done })
   const localCollected = Boolean(activeLocalPickup?.picked_up_at)
@@ -1069,7 +1082,9 @@ export function getAdminClaimLogisticsView(input: {
     ? [
         check("requested", "Retiro solicitado", true),
         check("collected", "Retirado por el cadete", localCollected),
-        check("received", "Producto recibido", originalsReceived),
+        originalsLost > 0
+          ? check("received", "Recepción resuelta (con pérdida en traslado)", localReceptionResolved)
+          : check("received", "Producto recibido", originalsReceived),
         check("inspected", "Producto inspeccionado", originalsInspected),
         ...localReplacementChecks,
         check("closed", "Reclamo finalizado", claimClosed),
@@ -1213,7 +1228,9 @@ export function getAdminClaimLogisticsView(input: {
     andreani: local ? "No aplica (Envío BEYONIX)" : legView ? `${legView.statusLabel}${legView.andreaniEstado ? ` · ${legView.andreaniEstado}` : ""}` : "Sin operación",
     inspection: (returnWaived || localWaived || !units.some((unit) => unit.role === "original")) && !units.some((unit) => unit.location === "recibida_beyonix")
       ? "No aplica"
-      : has("original", ["con_cliente", "en_andreani", "recibida_beyonix"]) || has("reemplazo", ["recibida_beyonix"]) ? "Pendiente" : "Completa",
+      : has("original", ["con_cliente", "en_andreani", "recibida_beyonix"]) || has("reemplazo", ["recibida_beyonix"]) ? "Pendiente"
+        // Todo lo que volvía se perdió en el traslado: no hubo nada que inspeccionar.
+        : originalsLost > 0 && !has("original", ["reincorporada_stock", "baja"]) ? "No aplica" : "Completa",
     incidents,
     manualIntervention: !closed && (incidents > 0 || shipments.some((row) => row.creation_status === "manual_review")),
   }

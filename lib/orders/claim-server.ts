@@ -120,10 +120,14 @@ const CLAIM_ERRORS: Record<string, [number, string]> = {
   CLAIM_LOCAL_PICKUP_NOT_FOUND: [404, "El reclamo no tiene un retiro por cadete vigente."],
   CLAIM_LOCAL_PICKUP_STATE: [409, "El retiro cambió de estado. Actualizá el reclamo."],
   CLAIM_LOCAL_PICKUP_DATE: [400, "Elegí una fecha desde hoy y dentro de los próximos 60 días."],
-  CLAIM_LOCAL_PICKUP_NOT_COLLECTED: [409, "Primero marcá el producto como retirado por el cadete."],
-  CLAIM_LOCAL_PICKUP_ALREADY_COLLECTED: [409, "El cadete ya retiró el producto: completá la recepción o registrá la incidencia."],
-  CLAIM_LOCAL_PICKUP_OPEN: [409, "Hay un retiro por cadete en curso: recibí el producto, registrá la incidencia o cancelá el retiro antes de finalizar."],
+  CLAIM_LOCAL_PICKUP_NOT_COLLECTED: [409, "Sólo se puede registrar con el producto retirado por el cadete y unidades pendientes de llegar. Actualizá el reclamo."],
+  CLAIM_LOCAL_PICKUP_ALREADY_COLLECTED: [409, "El cadete ya retiró el producto: completá la recepción, registrá la incidencia o confirmá la pérdida en traslado."],
+  CLAIM_LOCAL_PICKUP_OPEN: [409, "Hay un retiro por cadete en curso: recibí el producto, confirmá la pérdida en traslado o cancelá el retiro antes de finalizar."],
   CLAIM_LOCAL_PICKUP_NOT_RECEIVED: [409, "Primero confirmá la recepción en BEYONIX de esas unidades (retiro por cadete)."],
+  CLAIM_UNIT_TRANSIT_LOSS_INVALID: [409, "La pérdida en traslado sólo aplica a unidades retiradas por el cadete que no llegaron."],
+  CLAIM_UNIT_TRANSIT_LOSS_FINAL: [409, "Esa unidad tiene una pérdida confirmada en traslado: no se recibe ni se inspecciona."],
+  CLAIM_CANCEL_TRANSIT_LOSS: [409, "No podés cancelar este reclamo porque hay productos perdidos durante el traslado. Completá la solución al cliente y finalizalo."],
+  CLAIM_TRANSIT_LOSS_UNRESOLVED: [409, "No podés finalizar ni rechazar este reclamo: hay productos perdidos durante el traslado y la solución al cliente todavía está pendiente."],
 }
 
 export function claimErrorResponse(error: unknown) {

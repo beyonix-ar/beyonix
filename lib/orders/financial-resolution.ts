@@ -115,11 +115,13 @@ export function resolveOrderFinancialOptions(facts: FinancialResolutionFacts): F
 
 export type FinancialProductOutcome = "no_return" | "return"
 /** unavailable: el producto debe volver pero no hay devolución registrada. */
-export type FinancialReceptionState = "not_applicable" | "received" | "pending" | "exception" | "unavailable"
+/** lost_in_transit: retiro por cadete con pérdida confirmada en traslado (resuelto sin recibir esas unidades). */
+export type FinancialReceptionState = "not_applicable" | "received" | "pending" | "exception" | "unavailable" | "lost_in_transit"
 export type FinancialClaimUnit = { claimId: number; role: string; location: string }
 export type FinancialResolutionMode = "wizard" | "resolution" | "advanced" | "none"
 
 const RECEIVED_UNIT_LOCATIONS = ["reincorporada_stock", "baja"]
+const LOST_UNIT_LOCATION = "perdida_traslado"
 
 /**
  * Qué pasa con el producto según lo que BEYONIX ya registró. Usa el mismo
@@ -143,7 +145,11 @@ export function deriveFinancialReturnContext(input: {
   if (input.claimBlock === "CLAIM_MONEY_RETURN_PENDING") {
     return { product: "return", reception: claimId !== null && input.exceptionClaimIds.includes(claimId) ? "exception" : "pending", claimId }
   }
-  return { product: "return", reception: returning.every((unit) => RECEIVED_UNIT_LOCATIONS.includes(unit.location)) ? "received" : "pending", claimId }
+  // Una unidad perdida en el traslado nunca se recibe: resuelve la recepción, pero no se informa como recibida.
+  if (returning.every((unit) => RECEIVED_UNIT_LOCATIONS.includes(unit.location) || unit.location === LOST_UNIT_LOCATION)) {
+    return { product: "return", reception: returning.some((unit) => unit.location === LOST_UNIT_LOCATION) ? "lost_in_transit" : "received", claimId }
+  }
+  return { product: "return", reception: "pending", claimId }
 }
 
 export function getFinancialResolutionMode(input: {
@@ -163,7 +169,7 @@ export function getFinancialResolutionMode(input: {
 
 export type ReturnPhysicalState = "received_ok" | "not_received" | "damaged" | "incomplete" | "wrong_product"
 export type ReturnMoneyDecision = "approved" | "rejected"
-export type MerchandiseSituation = "not_dispatched" | "not_returned" | ReturnPhysicalState
+export type MerchandiseSituation = "not_dispatched" | "not_returned" | "lost_in_transit" | ReturnPhysicalState
 
 export const RETURN_PHYSICAL_STATES: readonly ReturnPhysicalState[] = ["received_ok", "not_received", "damaged", "incomplete", "wrong_product"]
 export const RETURN_REJECTION_REASON_MIN_LENGTH = 10
@@ -172,6 +178,7 @@ export const RETURN_REJECTION_REASON_MIN_LENGTH = 10
 export const MERCHANDISE_SITUATION_COPY: Record<MerchandiseSituation, string> = {
   not_dispatched: "El producto no se despachó.",
   not_returned: "El producto aún no volvió.",
+  lost_in_transit: "Pérdida confirmada en traslado: el producto retirado no llegó a BEYONIX.",
   received_ok: "El producto volvió correctamente.",
   not_received: "Producto no recibido.",
   damaged: "Producto recibido dañado.",
@@ -219,7 +226,9 @@ export function deriveMerchandiseSituation(input: {
   reception: FinancialReceptionState
 }): MerchandiseSituation {
   if (input.inspection) return input.inspection
-  if (input.product === "return") return input.reception === "received" ? "received_ok" : "not_returned"
+  if (input.product === "return") {
+    return input.reception === "received" ? "received_ok" : input.reception === "lost_in_transit" ? "lost_in_transit" : "not_returned"
+  }
   return input.dispatched ? "not_returned" : "not_dispatched"
 }
 

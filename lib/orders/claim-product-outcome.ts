@@ -3,8 +3,9 @@
 // reclamo): nunca los deduce del estado del reclamo. Cancelar, rechazar o
 // finalizar un reclamo no cambia ninguno de estos números.
 //
-// No existe un estado "perdida" separado: la inspección sólo distingue
-// reincorporar a stock (vendible o con descuento) y dar de baja.
+// La inspección sólo distingue reincorporar a stock (vendible o con descuento)
+// y dar de baja. Aparte, el retiro por cadete (Envío BEYONIX) puede registrar
+// una "Pérdida confirmada en traslado": nunca se recibió ni se inspeccionó.
 
 export interface ClaimProductOutcomeCounts {
   /** Reincorporadas a stock vendible. */
@@ -15,6 +16,8 @@ export interface ClaimProductOutcomeCounts {
   writtenOff: number
   /** Nunca volvieron a BEYONIX: quedaron en poder del cliente. */
   keptByCustomer?: number
+  /** Retiradas por el cadete y confirmadas como perdidas en el traslado. */
+  lostInTransit?: number
 }
 
 const units = (count: number, singular: string, plural: string) =>
@@ -28,11 +31,13 @@ export function getClaimProductOutcomeLines(counts: ClaimProductOutcomeCounts): 
   const discounted = positive(counts.discounted)
   const writtenOff = positive(counts.writtenOff)
   const kept = positive(counts.keptByCustomer)
+  const lost = positive(counts.lostInTransit)
   return [
     restocked > 0 ? units(restocked, "reincorporada al stock", "reincorporadas al stock") : null,
     discounted > 0 ? units(discounted, "reincorporada al stock con descuento", "reincorporadas al stock con descuento") : null,
     writtenOff > 0 ? units(writtenOff, "dada de baja", "dadas de baja") : null,
     kept > 0 ? units(kept, "quedó en poder del cliente", "quedaron en poder del cliente") : null,
+    lost > 0 ? units(lost, "con pérdida confirmada en traslado", "con pérdida confirmada en traslado") : null,
   ].filter((line): line is string => line !== null)
 }
 
@@ -40,11 +45,13 @@ export function getClaimProductOutcomeLines(counts: ClaimProductOutcomeCounts): 
 export function getClaimProductOutcomeTitle(counts: ClaimProductOutcomeCounts): string | null {
   const lines = getClaimProductOutcomeLines(counts)
   if (lines.length === 0) return null
-  const total = positive(counts.restocked) + positive(counts.discounted) + positive(counts.writtenOff) + positive(counts.keptByCustomer)
+  const total = positive(counts.restocked) + positive(counts.discounted) + positive(counts.writtenOff) + positive(counts.keptByCustomer) +
+    positive(counts.lostInTransit)
   if (lines.length > 1 || total > 1) return lines.join(" · ")
   if (positive(counts.restocked)) return "Reincorporada al stock"
   if (positive(counts.discounted)) return "Reincorporada al stock con descuento"
   if (positive(counts.writtenOff)) return "Dada de baja"
+  if (positive(counts.lostInTransit)) return "Pérdida confirmada en traslado"
   return "Quedó en poder del cliente"
 }
 
@@ -79,6 +86,7 @@ export function getClaimItemOutcomeCounts(input: {
       restocked: count(["reincorporada_stock"]),
       writtenOff: count(["baja"]),
       keptByCustomer: input.includeNotReturned ? count(["conservada_cliente", "con_cliente"]) : 0,
+      lostInTransit: count(["perdida_traslado"]),
     }
   }
   const restocked = Math.min(claimed, positive(input.restockedQuantity ?? 0))

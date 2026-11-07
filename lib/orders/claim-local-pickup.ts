@@ -5,6 +5,10 @@
  * se vuelven a validar ahí. Sin sucursales, etiquetas, QR ni Andreani.
  *
  * "Retirado" = el cadete tiene el producto; BEYONIX todavía no lo recibió.
+ * "Recepción parcial" = llegó una parte; el resto todavía puede llegar.
+ * "Pérdida confirmada en traslado" = decisión administrativa explícita sobre
+ * unidades retiradas que nunca llegarán (order_claim_units 'perdida_traslado'):
+ * no es una recepción ni una inspección y nunca vuelve a stock.
  * "Pendiente de inspección" no es un estado del retiro: son las unidades en
  * `recibida_beyonix` (order_claim_units), que se inspeccionan con el flujo
  * existente (stock o baja).
@@ -16,6 +20,7 @@ export type ClaimLocalPickupStatus =
   | "retirado"
   | "recibido_parcial"
   | "recibido"
+  | "resuelto_con_perdida"
   | "incidencia"
   | "cancelado"
 
@@ -37,6 +42,7 @@ export interface ClaimLocalPickupSource extends ClaimLocalPickupCustomerSource {
   incident_note?: string | null
   incident_at?: string | null
   cancel_reason?: string | null
+  loss_confirmed_at?: string | null
   created_at?: string | null
 }
 
@@ -46,9 +52,10 @@ export const CLAIM_LOCAL_PICKUP_STATUS_LABELS: Record<ClaimLocalPickupStatus, st
   pendiente_coordinacion: "Pendiente de coordinación",
   coordinado: "Retiro coordinado",
   retirado: "Retirado por cadete",
-  recibido_parcial: "Recibido parcialmente",
+  recibido_parcial: "Recepción parcial",
   recibido: "Recibido en BEYONIX",
-  incidencia: "Incidencia de retiro o recepción",
+  resuelto_con_perdida: "Pérdida confirmada en traslado",
+  incidencia: "Incidencia de retiro o traslado",
   cancelado: "Retiro cancelado",
 }
 
@@ -58,9 +65,17 @@ export const CLAIM_LOCAL_PICKUP_TONES: Record<ClaimLocalPickupStatus, "neutral" 
   retirado: "info",
   recibido_parcial: "warning",
   recibido: "success",
+  resuelto_con_perdida: "warning",
   incidencia: "danger",
   cancelado: "neutral",
 }
+
+/** Novedades sobre unidades RECIBIDAS (lo que no llegó queda pendiente, nunca como novedad de otra unidad). */
+export const CLAIM_LOCAL_RECEPTION_INCIDENT_TYPES = ["producto_distinto", "faltantes_accesorios", "paquete_vacio", "dano_estado", "otro"] as const
+export type ClaimLocalReceptionIncidentType = (typeof CLAIM_LOCAL_RECEPTION_INCIDENT_TYPES)[number]
+
+/** Mínimo del motivo de una pérdida confirmada en traslado (igual que la base). */
+export const CLAIM_LOCAL_LOSS_NOTE_MIN = 10
 
 export const CLAIM_LOCAL_PICKUP_CUSTOMER_MESSAGE = "Coordinaremos con vos el retiro del producto en tu domicilio."
 
@@ -96,8 +111,12 @@ export interface ClaimLocalPickupAdminView {
   canReportIncident: boolean
   /** Sólo antes de que el cadete lo retire. */
   canCancel: boolean
+  /** Después del retiro: confirmar que unidades pendientes nunca llegarán (excepción auditada). */
+  canConfirmLoss: boolean
   /** Unidades que todavía deben llegar (originales con el cliente o el cadete). */
   pendingUnits: number
+  /** Unidades con pérdida confirmada en traslado (nunca recibidas ni inspeccionadas). */
+  lostUnits: number
 }
 
 export function getClaimLocalPickupAdminView(
@@ -106,54 +125,80 @@ export function getClaimLocalPickupAdminView(
   { closed = false, received = false }: { closed?: boolean; received?: boolean } = {},
 ): ClaimLocalPickupAdminView | null {
   if (!pickup || pickup.status === "cancelado") return null
-  const pendingUnits = units.filter((unit) => unit.role === "original" && unit.location === "con_cliente" && !unit.shipment_id).length
+  const originals = units.filter((unit) => unit.role === "original")
+  const pendingUnits = originals.filter((unit) => unit.location === "con_cliente" && !unit.shipment_id).length
+  const lostUnits = originals.filter((unit) => unit.location === "perdida_traslado").length
   const collected = Boolean(pickup.picked_up_at)
   const open = !closed
+  const afterCollection = open && collected && pendingUnits > 0 && ["retirado", "recibido_parcial", "incidencia"].includes(pickup.status)
   return {
     status: pickup.status,
-    statusLabel: CLAIM_LOCAL_PICKUP_STATUS_LABELS[pickup.status],
+    statusLabel: pickup.status === "incidencia"
+      ? collected ? "Incidencia durante el traslado" : "Retiro con inconveniente"
+      : CLAIM_LOCAL_PICKUP_STATUS_LABELS[pickup.status],
     tone: CLAIM_LOCAL_PICKUP_TONES[pickup.status],
     agreedFor: formatLocalPickupDate(pickup.agreed_for),
     incident: pickup.status === "incidencia" ? pickup.incident_note?.trim() || "Incidencia registrada" : null,
     collected,
     canSchedule: open && !collected && ["pendiente_coordinacion", "coordinado", "incidencia"].includes(pickup.status),
     canMarkCollected: open && !collected && ["pendiente_coordinacion", "coordinado", "incidencia"].includes(pickup.status),
-    canReceive: open && collected && pendingUnits > 0 && ["retirado", "recibido_parcial", "incidencia"].includes(pickup.status),
+    canReceive: afterCollection,
     canReportIncident: open && ["pendiente_coordinacion", "coordinado", "retirado", "recibido_parcial"].includes(pickup.status),
     canCancel: open && !collected && !received && pickup.status !== "recibido",
+    canConfirmLoss: afterCollection,
     pendingUnits,
+    lostUnits,
   }
 }
 
+const PICKUP_TITLE = "Retiro en tu domicilio"
+const LOSS_FOLLOW_UP = "No tenés que hacer nada: ya lo estamos resolviendo y te avisamos por este medio cómo sigue."
+
 /**
- * Frase para el cliente: simple, sin detalles internos ni horarios. La fecha
- * sólo aparece cuando ya se acordó con él.
+ * Frase para el cliente: simple, verdadera y sin detalles internos ni
+ * horarios. La fecha sólo aparece cuando ya se acordó con él. Nunca dice
+ * "recibido" de algo que no llegó (recepción parcial o pérdida en traslado).
  */
 export function getCustomerLocalPickupView(source: ClaimLocalPickupCustomerSource | null | undefined) {
   if (!source || source.status === "cancelado") return null
   const date = formatLocalPickupDate(source.agreed_for)
   switch (source.status) {
     case "pendiente_coordinacion":
+      return { title: PICKUP_TITLE, statusLabel: "Pendiente de coordinación", instructions: [CLAIM_LOCAL_PICKUP_CUSTOMER_MESSAGE] }
     case "incidencia":
-      return { title: "Retiro en tu domicilio", statusLabel: "Coordinando el retiro", instructions: [CLAIM_LOCAL_PICKUP_CUSTOMER_MESSAGE] }
+      return source.picked_up_at
+        ? { title: PICKUP_TITLE, statusLabel: "Incidencia durante el traslado", instructions: ["Hubo un inconveniente durante el traslado de tu producto. Lo estamos revisando y te avisamos por este medio cómo sigue."] }
+        : { title: PICKUP_TITLE, statusLabel: "Retiro con inconveniente", instructions: ["No pudimos retirar el producto. Te vamos a escribir por este medio para coordinar nuevamente."] }
     case "coordinado":
       return {
-        title: "Retiro en tu domicilio",
+        title: PICKUP_TITLE,
         statusLabel: date ? `Retiro coordinado para el ${date}` : "Retiro coordinado",
         instructions: ["Tené el producto listo, completo y embalado con sus accesorios. Si necesitás cambiar el día, escribinos por este medio."],
       }
     case "retirado":
-      return { title: "Retiro en tu domicilio", statusLabel: "Producto retirado", instructions: ["Retiramos el producto. Te avisamos por este medio cuando llegue a BEYONIX."] }
+      return { title: PICKUP_TITLE, statusLabel: "Producto retirado", instructions: ["Retiramos el producto. Te avisamos por este medio cuando llegue a BEYONIX."] }
     case "recibido_parcial":
+      return { title: PICKUP_TITLE, statusLabel: "Recepción parcial", instructions: ["Recibimos parte de tu devolución. Te avisamos por este medio cuando llegue el resto."] }
     case "recibido":
-      return { title: "Retiro en tu domicilio", statusLabel: "Recibido en BEYONIX", instructions: ["Recibimos tu producto. Lo vamos a revisar y te avisamos por este medio cómo sigue."] }
+      return { title: PICKUP_TITLE, statusLabel: "Recibido en BEYONIX", instructions: ["Recibimos tu producto. Lo vamos a revisar y te avisamos por este medio cómo sigue."] }
+    case "resuelto_con_perdida":
+      return {
+        title: PICKUP_TITLE,
+        statusLabel: "Incidencia durante el traslado",
+        instructions: [source.received_at
+          ? `Recibimos parte de tu devolución y hubo un inconveniente durante el traslado del resto. ${LOSS_FOLLOW_UP}`
+          : `Hubo un inconveniente durante el traslado de tu producto. ${LOSS_FOLLOW_UP}`],
+      }
   }
 }
 
 export function getCustomerLocalPickupHeadline(source: ClaimLocalPickupCustomerSource | null | undefined) {
   if (!source || source.status === "cancelado") return null
-  if (source.status === "pendiente_coordinacion" || source.status === "incidencia") return "Coordinaremos el retiro de tu producto"
+  if (source.status === "pendiente_coordinacion") return "Coordinaremos el retiro de tu producto"
+  if (source.status === "incidencia") return source.picked_up_at ? "Incidencia durante el traslado" : "Retiro con inconveniente"
   if (source.status === "coordinado") return "Retiro de tu producto coordinado"
   if (source.status === "retirado") return "Retiramos tu producto"
+  if (source.status === "recibido_parcial") return "Recibimos parte de tu devolución"
+  if (source.status === "resuelto_con_perdida") return "Resolución en proceso"
   return null
 }

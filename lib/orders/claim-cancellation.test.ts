@@ -58,3 +58,23 @@ test("vista previa: mismos códigos que exige la base", () => {
   assert.equal(getClaimCancellationPreview({ claimId: 9, status: "rechazado", isAdmin: true }).available, false)
   assert.equal(getClaimCancellationPreview({ claimId: 9, status: "aprobado", isAdmin: false }).available, false)
 })
+
+test("N1: producto perdido en el traslado -> nunca se cancela; mensaje claro y acceso a la solución o a finalizar", () => {
+  const preview = (units: Array<{ role: string; location: string }>) =>
+    getClaimCancellationPreview({ claimId: 9, status: "aprobado", failureType: "falla", isAdmin: true, units })
+  const pending = preview([{ role: "original", location: "perdida_traslado" }, { role: "reemplazo", location: "reservada" }])
+  assert.deepEqual(pending.codes, ["reservation", "transit_loss_pending"], "reservado no es entregado")
+  assert.ok(pending.blockers.includes("No podés cancelar este reclamo porque hay productos perdidos durante el traslado y la solución al cliente todavía está pendiente."))
+  assert.deepEqual(preview([{ role: "original", location: "perdida_traslado" }, { role: "reemplazo", location: "entregada_cliente" }]).codes,
+    ["replacement_delivered", "transit_loss_resolved"])
+  assert.deepEqual(preview([{ role: "original", location: "con_cliente" }]).codes, [], "sin pérdidas, sin cambios")
+  // Códigos de la base (incluso tras una llamada directa a la RPC).
+  assert.deepEqual(parseClaimCancellationBlockerCodes("credit_note_pending,transit_loss_pending"), ["credit_note_pending", "transit_loss_pending"])
+  assert.doesNotMatch(describeClaimCancellationBlockers("transit_loss_pending").join(" "), /perdida_traslado|CLAIM_|SQL/)
+  const views = getClaimCancellationBlockerViews(["transit_loss_pending", "transit_loss_resolved"], { ...base, plan: "retiro_cadete", hasExecutionStep: true })
+  assert.deepEqual(views.map((view) => [view.code, view.actionLabel, view.step]), [
+    ["transit_loss_pending", "Ir a la solución", "execution"],
+    ["transit_loss_resolved", "Ir a finalización", "finish"],
+  ])
+  assert.equal(getClaimCancellationBlockerViews(["transit_loss_pending"], { ...base, plan: "retiro_cadete" })[0].step, "replacement")
+})

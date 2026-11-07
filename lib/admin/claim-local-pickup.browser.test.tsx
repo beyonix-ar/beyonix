@@ -60,6 +60,10 @@ const scenarios = {
   sin_metodo: { units: [], pickups: [] },
   pendiente: { units: [unit("original", "con_cliente"), unit("original", "con_cliente")], pickups: [pickup("pendiente_coordinacion")] },
   retirado: { units: [unit("original", "con_cliente"), unit("original", "con_cliente")], pickups: [pickup("retirado", { picked_up_at: "2026-11-06T13:00:00Z" })] },
+  parcial: {
+    units: [unit("original", "recibida_beyonix"), unit("original", "con_cliente")],
+    pickups: [pickup("recibido_parcial", { picked_up_at: "2026-11-06T13:00:00Z", received_at: "2026-11-06T15:00:00Z" })],
+  },
   inspeccionado: {
     units: [unit("original", "reincorporada_stock"), unit("original", "baja")],
     pickups: [pickup("recibido", { picked_up_at: "2026-11-06T13:00:00Z", received_at: "2026-11-06T15:00:00Z" })],
@@ -251,4 +255,67 @@ test("Recibido e inspeccionado: Entrega del reemplazo (reservar) sin Andreani", 
     assert.doesNotMatch(await page.locator("[data-claim-logistics]").first().innerText(), /Andreani|sucursal/i)
     assert.deepEqual(errors, [])
   } finally { await page.close() }
+})
+
+test("Recepción: la novedad sólo sobre unidades recibidas (nunca 'cantidad incorrecta'), con la cantidad afectada", async () => {
+  const { page, errors } = await open("retirado")
+  try {
+    const pickup = page.locator("[data-claim-local-pickup]")
+    await pickup.getByRole("button", { name: "Confirmar recepción" }).click()
+    const item = pickup.locator("[data-claim-local-reception-item='71']")
+    const novelty = item.getByRole("combobox", { name: /Novedad en lo recibido/ })
+    const options = await novelty.locator("option").allInnerTexts()
+    assert.ok(!options.some((option) => /cantidad/i.test(option)), "lo que no llegó queda pendiente, no es una novedad")
+    await novelty.selectOption("dano_estado")
+    const affected = item.getByRole("spinbutton", { name: /Unidades recibidas con novedad/ })
+    assert.equal(await affected.inputValue(), "2")
+    await affected.fill("1")
+    // Sin unidades recibidas no hay novedad posible.
+    await item.getByRole("spinbutton", { name: /Unidades recibidas ·/ }).fill("0")
+    assert.equal(await novelty.isDisabled(), true)
+    await item.getByRole("spinbutton", { name: /Unidades recibidas ·/ }).fill("2")
+    assert.match(await item.innerText(), /Esperadas: 2/)
+    await pickup.getByRole("textbox").fill("Una llegó con la caja rota")
+    await pickup.getByRole("button", { name: "Confirmar recepción" }).click()
+    await pickup.getByRole("button", { name: "Sí, confirmar" }).click()
+    await page.waitForFunction(() => (window as unknown as { __posts: unknown[] }).__posts.length === 1)
+    const [reception] = await posts(page) as Array<{ items: unknown }>
+    assert.deepEqual(reception.items, [{ orderItemId: 71, quantity: 2, incidentType: "dano_estado", incidentQuantity: 1 }])
+    assert.deepEqual(errors, [])
+  } finally { await page.close() }
+})
+
+test("Pérdida en traslado: sólo después del retiro, motivo obligatorio y confirmación explícita", async () => {
+  const { page, errors } = await open("parcial")
+  try {
+    const pickup = page.locator("[data-claim-local-pickup]")
+    assert.match(await pickup.innerText(), /Recepción parcial/)
+    await pickup.getByRole("button", { name: "Confirmar pérdida en traslado" }).click()
+    const form = pickup.locator("[data-claim-local-loss]")
+    assert.match(await form.innerText(), /no vuelven a stock[\s\S]*la resolución sigue con sus reglas/)
+    const lostInput = form.getByRole("spinbutton", { name: /Unidades perdidas en traslado/ })
+    await lostInput.fill("5")
+    assert.equal(await lostInput.inputValue(), "1", "nunca más que lo pendiente")
+    const submit = pickup.getByRole("button", { name: "Confirmar pérdida", exact: true })
+    assert.equal(await submit.isDisabled(), true, "motivo obligatorio")
+    await pickup.getByRole("textbox").fill("El cadete confirmó el extravío del paquete")
+    await submit.click()
+    assert.match(await pickup.locator("[data-claim-local-loss-confirm]").innerText(), /1 unidad como pérdida definitiva[\s\S]*no vuelve a stock[\s\S]*auditada/)
+    assert.equal((await posts(page)).length, 0, "nada se envía sin la segunda confirmación")
+    await pickup.getByRole("button", { name: "Sí, confirmar pérdida" }).dblclick()
+    await page.waitForFunction(() => (window as unknown as { __posts: unknown[] }).__posts.length >= 1)
+    await page.waitForTimeout(400)
+    const sent = await posts(page) as Array<{ action: string; items: unknown; notes: string; confirmed: boolean; idempotencyKey: string }>
+    assert.equal(sent.length, 1, "doble clic: una sola declaración")
+    assert.deepEqual({ ...sent[0], idempotencyKey: undefined }, {
+      action: "loss", items: [{ orderItemId: 71, quantity: 1 }], notes: "El cadete confirmó el extravío del paquete", confirmed: true, idempotencyKey: undefined,
+    })
+    assert.match(sent[0].idempotencyKey, /^[A-Za-z0-9._:-]{8,200}$/)
+    assert.deepEqual(errors, [])
+  } finally { await page.close() }
+
+  const before = await open("pendiente")
+  try {
+    assert.equal(await before.page.getByRole("button", { name: "Confirmar pérdida en traslado" }).count(), 0, "antes del retiro, nunca")
+  } finally { await before.page.close() }
 })

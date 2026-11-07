@@ -149,6 +149,7 @@ export function getFinancialReceptionLabel(view: FinancialResolutionView, state:
   if (state.product !== "return") return "No aplica"
   if (view.reception === "received") return "Recibido"
   if (view.reception === "exception") return "Excepción registrada"
+  if (view.reception === "lost_in_transit") return "Pérdida confirmada en traslado"
   return state.exception ? "Pendiente (excepción)" : "Pendiente"
 }
 

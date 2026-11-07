@@ -16,11 +16,15 @@ export type ClaimCancellationBlocker =
   | "credit_note_issued"
   | "credit_applied"
   | "refund_pending"
+  /** Retiro por cadete: producto perdido por BEYONIX y la solución al cliente todavía no se ejecutó. */
+  | "transit_loss_pending"
+  /** Producto perdido por BEYONIX con la solución ya ejecutada: se finaliza, nunca se cancela. */
+  | "transit_loss_resolved"
 
 const CODES: readonly ClaimCancellationBlocker[] = [
   "andreani_uncertain", "andreani_open", "reservation", "replacement_in_transit", "replacement_delivered",
   "return_in_transit", "inspection_pending", "incident", "credit_note_pending", "credit_note_issued",
-  "credit_applied", "refund_pending",
+  "credit_applied", "refund_pending", "transit_loss_pending", "transit_loss_resolved",
 ]
 
 /** Estado en lenguaje simple (qué pasa), sin instrucciones técnicas. */
@@ -37,6 +41,8 @@ export const CLAIM_CANCELLATION_BLOCKER_LABELS: Record<ClaimCancellationBlocker,
   credit_note_issued: "Ya se emitió la nota de crédito: corresponde finalizar el reclamo.",
   credit_applied: "Ya se acreditó saldo a favor: corresponde finalizar el reclamo.",
   refund_pending: "Hay un reintegro en curso.",
+  transit_loss_pending: "No podés cancelar este reclamo porque hay productos perdidos durante el traslado y la solución al cliente todavía está pendiente.",
+  transit_loss_resolved: "Hubo productos perdidos durante el traslado y la solución ya se entregó: corresponde finalizar el reclamo.",
 }
 
 export function isClaimCancellationBlocker(code: string): code is ClaimCancellationBlocker {
@@ -110,7 +116,10 @@ export function getClaimCancellationBlockerViews(codes: readonly ClaimCancellati
       case "inspection_pending":
         return view(code, "Ir a recepción", "reception", "inspection")
       case "replacement_delivered":
+      case "transit_loss_resolved":
         return view(code, "Ir a finalización", "finish", "step")
+      case "transit_loss_pending":
+        return view(code, "Ir a la solución", context.hasExecutionStep ? "execution" : "replacement", "step")
       case "credit_note_pending":
       case "credit_note_issued":
       case "credit_applied":
@@ -163,5 +172,13 @@ export function getClaimCancellationPreview(input: {
   if (units.some((unit) => unit.incident_open) || shipments.some((row) => row.review_required)) codes.push("incident")
   if (notes.some((note) => note.status === "processing")) codes.push("credit_note_pending")
   if (notes.some((note) => note.status === "authorized")) codes.push("credit_note_issued")
+  // Producto perdido por BEYONIX: nunca se cancela. Anticipo prudente (la base
+  // decide por producto con NC liquidadas): sólo "resuelta" con reemplazos
+  // entregados que cubren las pérdidas.
+  const lost = units.filter((unit) => unit.role === "original" && unit.location === "perdida_traslado").length
+  if (lost > 0) {
+    const delivered = units.filter((unit) => unit.role === "reemplazo" && unit.location === "entregada_cliente").length
+    codes.push(delivered >= lost ? "transit_loss_resolved" : "transit_loss_pending")
+  }
   return { available, codes, blockers: codes.map((code) => CLAIM_CANCELLATION_BLOCKER_LABELS[code]) }
 }

@@ -224,9 +224,11 @@ export function getCustomerClaimSummary(claim: CustomerClaimSource): CustomerCla
   if (localPickup && localView) {
     if (localPickup.status === "coordinado") return summary("action", localView.statusLabel, localView.instructions)
     if (localPickup.status === "retirado") return summary("progress", "Retiramos tu producto", ["Te avisamos cuando llegue a BEYONIX."])
-    if (localPickup.status === "recibido" || localPickup.status === "recibido_parcial") {
-      return summary("progress", "Recibimos tu producto", [nextAfterReturn])
-    }
+    if (localPickup.status === "recibido") return summary("progress", "Recibimos tu producto", [nextAfterReturn])
+    // Nunca "recibido" de lo que no llegó: recepción parcial o incidencia en el traslado.
+    if (localPickup.status === "recibido_parcial") return summary("progress", "Recibimos parte de tu devolución", localView.instructions)
+    if (localPickup.status === "resuelto_con_perdida") return summary("progress", "Resolución en proceso", localView.instructions)
+    if (localPickup.status === "incidencia") return summary("progress", localView.statusLabel, localView.instructions)
     return summary("progress", "Coordinaremos el retiro de tu producto", localView.instructions)
   }
 
