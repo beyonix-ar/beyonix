@@ -288,11 +288,11 @@ test("pérdida: un comprobante no liquida dos NC por encima de su importe; NC de
     const foreign = await createClaim(db, 2, [{ order_item_id: 4, quantity: 1 }])
     await mutate(db, foreign, { status: "reintegro_pendiente", resolution: "reintegro_total" })
     const foreignNote = await compensate(db, foreign, "external_refund", 4, 1)
-    await assert.rejects(db.query("update order_credit_notes set claim_id=$2 where id=$1", [foreignNote, id]), /CREDIT_NOTE_CLAIM_IMMUTABLE/)
+    await assert.rejects(db.query("update order_credit_notes set claim_id=$2 where id=$1", [foreignNote, id]), /CREDIT_NOTE_CLAIM_IMMUTABLE|CREDIT_NOTE_AUTHORIZED_IMMUTABLE/)
     // NC del pedido sin reclamo: tampoco se asigna a posteriori al reclamo.
     const orderNote = (await one<{ id: string }>(db,
       "insert into order_credit_notes(order_id,claim_id,status,destination,cae,total_amount,settlement_status,voucher_point,voucher_number) values(1,null,'authorized','external_refund','CAE-X',2000,'pendiente',1,555) returning id")).id
-    await assert.rejects(db.query("update order_credit_notes set claim_id=$2 where id=$1", [orderNote, id]), /CREDIT_NOTE_CLAIM_IMMUTABLE/)
+    await assert.rejects(db.query("update order_credit_notes set claim_id=$2 where id=$1", [orderNote, id]), /CREDIT_NOTE_CLAIM_IMMUTABLE|CREDIT_NOTE_AUTHORIZED_IMMUTABLE/)
     await assert.rejects(close(db, id), UNRESOLVED)
   } finally {
     await db.close()
@@ -315,9 +315,10 @@ test("pérdida cerrada: la evidencia de la compensación no se reduce, mueve, bo
     await assert.rejects(db.query("update order_credit_note_items set order_item_id=3 where credit_note_id=$1", [balanceNote.id]), LOCKED, "cambiar el ítem")
     await assert.rejects(db.query("delete from order_credit_note_items where credit_note_id=$1", [balanceNote.id]), LOCKED, "borrar el renglón")
     await assert.rejects(db.query("update order_credit_notes set settlement_status='pendiente' where id=$1", [balanceNote.id]), LOCKED, "deshacer la liquidación")
-    await assert.rejects(db.query("update order_credit_notes set external_amount=1 where id=$1", [balanceNote.id]), LOCKED, "cambiar el importe")
-    await assert.rejects(db.query("update order_credit_notes set claim_id=null where id=$1", [balanceNote.id]), LOCKED, "desvincular del reclamo")
-    await assert.rejects(db.query("delete from order_credit_notes where id=$1", [balanceNote.id]), LOCKED, "borrar la NC")
+    // Importe y borrado: además, una NC autorizada nunca cambia su importe ni se borra (guarda previa).
+    await assert.rejects(db.query("update order_credit_notes set external_amount=1 where id=$1", [balanceNote.id]), /CREDIT_NOTE_AUTHORIZED_IMMUTABLE/, "cambiar el importe")
+    await assert.rejects(db.query("update order_credit_notes set claim_id=null where id=$1", [balanceNote.id]), /CREDIT_NOTE_AUTHORIZED_IMMUTABLE/, "desvincular del reclamo (NC autorizada)")
+    await assert.rejects(db.query("delete from order_credit_notes where id=$1", [balanceNote.id]), /CREDIT_NOTE_AUTHORIZED_IMMUTABLE/, "borrar la NC")
     await assert.rejects(db.query("update customer_credit_movements set amount=1 where id=$1", [movement]), LOCKED, "reducir el crédito")
     await assert.rejects(db.query("update customer_credit_movements set claim_id=null where id=$1", [movement]), LOCKED, "desvincular el crédito")
     await assert.rejects(db.query("update customer_credit_movements set metadata='{}' where id=$1", [movement]), LOCKED, "quitar el UUID de la NC")

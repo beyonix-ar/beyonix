@@ -268,8 +268,9 @@ test("P1-1 reproducción: la resolución de un reclamo finalizado no cambia (UPD
       await db.query("rollback")
     }
     assert.equal(await evidenced(db, note.id), true, "la evidencia sigue intacta")
-    // Lo no financiero sigue operable.
-    await db.query("update order_claims set admin_needs_action=true, admin_response='Gracias por tu paciencia.' where id=$1", [id])
+    // La actividad sigue operable; lo que ve el cliente del cierre, no (P2 postauditoría).
+    await db.query("update order_claims set admin_needs_action=true, last_customer_message_at=now() where id=$1", [id])
+    await assert.rejects(db.query("update order_claims set admin_response='Gracias por tu paciencia.' where id=$1", [id]), TERMINAL)
   } finally {
     await db.close()
   }

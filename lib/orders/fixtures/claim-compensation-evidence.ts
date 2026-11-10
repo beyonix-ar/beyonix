@@ -37,6 +37,7 @@ export async function authorizedClaimNote(db: SqlClient, {
   amount = 1000,
   externalAmount = null,
   customerCreditAmount = 0,
+  voucherNumber: fixedVoucher,
 }: {
   /** null = NC del pedido, sin reclamo. */
   claimId: number | null
@@ -46,9 +47,12 @@ export async function authorizedClaimNote(db: SqlClient, {
   amount?: number
   externalAmount?: number | null
   customerCreditAmount?: number
+  /** Número fiscal explícito (p. ej. el mismo en otro ambiente de ARCA). */
+  voucherNumber?: number
 }) {
   nextVoucher += 1
-  const voucherNumber = nextVoucher
+  const caeNumber = nextVoucher
+  const voucherNumber = fixedVoucher ?? caeNumber
   // Encabezado + renglones en una transacción, como el flujo real (la NC de un
   // mixto exige renglones al confirmar: zz_guard_mixed_claim_credit_note_has_items).
   await db.query("begin")
@@ -56,7 +60,7 @@ export async function authorizedClaimNote(db: SqlClient, {
     const id = await insertProcessingNote(db, { claimId, orderId, destination, lines, amount, externalAmount, customerCreditAmount })
     await db.query(
       "update order_credit_notes set status='authorized', cae=$2, voucher_point=1, voucher_number=$3, authorized_at=now() where id=$1",
-      [id, `CAE-${voucherNumber}`, voucherNumber])
+      [id, `CAE-${caeNumber}`, voucherNumber])
     await db.query("commit")
     return { id, voucherNumber }
   } catch (error) {

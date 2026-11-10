@@ -47,6 +47,18 @@ export const CLAIM_FINANCIAL_CHAIN = [
   "20261106120000_claim_local_pickups",
 ]
 
+/** Migraciones fiscales reales (ARCA, liquidación MP, guardas fiscales) que conviven con la cadena de reclamos. */
+export const FISCAL_MIGRATIONS = [
+  "20260927110000_arca_credit_note_hardening",
+  "20260927120000_arca_environment_isolation",
+  "20261015120000_settle_credit_notes_after_mp_refund",
+  "20261015170000_mercadopago_refund_closure",
+  "20261015180000_fiscal_obligation_guards",
+]
+
+/** Reclamos + fiscal en el orden cronológico real de aplicación. */
+export const CLAIM_FISCAL_CHAIN = [...CLAIM_FINANCIAL_CHAIN, ...FISCAL_MIGRATIONS].sort()
+
 export type Db = PGlite
 export type Row = Record<string, unknown>
 export type Item = { order_item_id: number; quantity: number }
@@ -55,10 +67,16 @@ export type Item = { order_item_id: number; quantity: number }
  * Pedido 1 (cliente, pago pay-1): ítem 1 = producto 1 / variante 1 x3; ítem 2 = producto 2 x1; ítem 3 = producto 1 / variante 2 x2.
  * Pedido 2 (mismo cliente, pay-2): ítem 4 = producto 1 / variante 1 x2. Pedido 3 (otro cliente, pay-3): ítem 5 x1.
  */
-export async function setup({ provider = "beyonix", migrations = CLAIM_FINANCIAL_CHAIN.map(migration) }: { provider?: string; migrations?: string[] } = {}) {
+export async function setup({ provider = "beyonix", fiscal = false, migrations = (fiscal ? CLAIM_FISCAL_CHAIN : CLAIM_FINANCIAL_CHAIN).map(migration) }: {
+  provider?: string
+  /** Agrega el complemento fiscal (claim-fiscal-schema.sql) y usa CLAIM_FISCAL_CHAIN. */
+  fiscal?: boolean
+  migrations?: string[]
+} = {}) {
   const db = new PGlite()
   await db.exec(source("./claim-logistics-schema.sql"))
   await db.exec("alter table ordenes add column shipping_provider text, add column envio_proveedor text")
+  if (fiscal) await db.exec(source("./claim-fiscal-schema.sql"))
   // Antes de la cadena: la migración engancha su guarda sólo si la tabla existe (como en producción).
   await db.exec(MERCADOPAGO_REFUNDS_TABLE_SQL)
   for (const sql of migrations) await db.exec(sql)
@@ -78,6 +96,11 @@ export async function setup({ provider = "beyonix", migrations = CLAIM_FINANCIAL
   }
   await db.exec(`insert into orden_items(id,orden_id,producto_id,variante_id,cantidad,precio) values
     (1,1,1,1,3,30000),(2,1,2,3,1,9000),(3,1,1,2,2,30000),(4,2,1,1,2,30000),(5,3,1,1,1,30000)`)
+  // Factura C autorizada (homologación) de cada pedido: la NC se asocia a ella.
+  if (fiscal) {
+    await db.exec(`update ordenes set invoice_status='authorized', invoice_point=3, invoice_number=100+id, invoice_cae='CAE-F'||id,
+      invoice_arca_environment='homologation', invoice_queued_at=now()`)
+  }
   return db
 }
 

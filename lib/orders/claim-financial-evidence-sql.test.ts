@@ -163,9 +163,8 @@ test("saldo: mismo número fiscal en dos ambientes; cada NC cuenta sólo con SU 
   try {
     const id = await moneyClaim(db, "saldo_a_favor", "aprobado", [{ order_item_id: 1, quantity: 2 }])
     const a = await authorizedClaimNote(db, { claimId: id, destination: "customer_balance", lines: [{ orderItemId: 1, quantity: 1 }] })
-    const b = await authorizedClaimNote(db, { claimId: id, destination: "customer_balance", lines: [{ orderItemId: 1, quantity: 1 }] })
     // Homologación y producción numeran igual: mismo punto y número, otro CAE.
-    await db.query("update order_credit_notes set voucher_number=$2 where id=$1", [b.id, a.voucherNumber])
+    const b = await authorizedClaimNote(db, { claimId: id, destination: "customer_balance", lines: [{ orderItemId: 1, quantity: 1 }], voucherNumber: a.voucherNumber })
     await creditNoteToBalance(db, a.id)
     await markSettledWithoutEvidence(db, b.id)
     assert.equal(await evidenced(db, a.id), true)

@@ -1449,37 +1449,85 @@ create trigger guard_order_claim_transit_loss_terminal
   for each row execute function public.guard_order_claim_transit_loss_terminal();
 
 -- Reclamo terminal: su obligación comercial no se reescribe --------------------
--- Finalizado (o cancelado) un reclamo, la resolución, lo reclamado, el pedido,
--- el cliente, el tipo de falla y el estado quedan fijos: cambiarlos después
--- reescribiría a qué se obligó BEYONIX y dejaría la evidencia del dinero sin
--- la guarda que la protegía. Rechazado: tampoco cambian mientras siga
--- rechazado (reopen_rejected_order_claim lo saca de ese estado, como siempre).
--- Para UPDATE directo, RPC o cualquier ruta, porque vive en un trigger. Una
--- corrección histórica requiere un procedimiento excepcional separado.
+-- Finalizado (o cancelado) o rechazado un reclamo, la resolución, lo reclamado,
+-- el pedido, el cliente, el tipo de falla, el estado y lo que ve el cliente
+-- (resumen congelado, respuesta, motivos, fecha de cierre, importe confirmado)
+-- quedan fijos: cambiarlos después reescribiría a qué se obligó BEYONIX o
+-- mostraría una solución distinta de la aplicada, sin tocar el ledger. Ningún
+-- flujo legítimo los modifica en un terminal (las RPC responden CLAIM_TERMINAL);
+-- la actividad (atención del Admin, últimos mensajes) sigue libre.
+-- Rechazado: la ÚNICA salida es reopen_rejected_order_claim. La guarda lo
+-- verifica con una autorización persistida por esa RPC en la MISMA transacción
+-- (order_claim_reopen_authorizations), escrita sólo por funciones SECURITY
+-- DEFINER (sin privilegios para anon, authenticated ni service_role), de un
+-- solo uso, y sólo para la forma exacta de la reapertura (en_revision, sin
+-- resolución, motivo, resumen ni cierre; nada más cambia). No hay flag de
+-- sesión ni triggers deshabilitados. Para UPDATE directo, RPC o cualquier ruta.
+-- Una corrección histórica requiere un procedimiento excepcional separado.
+create table if not exists public.order_claim_reopen_authorizations (
+  id bigint generated always as identity primary key,
+  claim_id bigint not null references public.order_claims(id) on delete cascade,
+  transaction_id bigint not null default txid_current(),
+  actor_id uuid not null,
+  reason text not null,
+  created_at timestamptz not null default clock_timestamp(),
+  consumed_at timestamptz,
+  constraint order_claim_reopen_authorizations_reason check (length(btrim(reason)) between 10 and 1000),
+  constraint order_claim_reopen_authorizations_once unique (claim_id, transaction_id)
+);
+
+comment on table public.order_claim_reopen_authorizations is
+  'Autorización de un solo uso que reopen_rejected_order_claim deja en su transacción para que guard_order_claim_terminal_immutable permita rechazado -> en_revision. Sin privilegios para anon/authenticated/service_role; también es la auditoría (actor, motivo, fecha).';
+
+alter table public.order_claim_reopen_authorizations enable row level security;
+revoke all on table public.order_claim_reopen_authorizations from public, anon, authenticated, service_role;
+
 create or replace function public.guard_order_claim_terminal_immutable()
 returns trigger
 language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  v_old jsonb;
+  v_new jsonb;
+  v_key text;
+  -- Lo comercial y lo visible de un reclamo terminal.
+  v_frozen constant text[] := array['id', 'order_id', 'user_id', 'claim_type', 'failure_type', 'status', 'resolution',
+    'affected_items', 'approved_amount', 'resolution_summary', 'admin_response', 'rejection_reason', 'closed_at',
+    'cancelled_at', 'cancelled_by', 'cancellation_reason', 'refund_amount_confirmed', 'refund_completed_at',
+    'refund_completed_by'];
+  -- Lo único que la reapertura cambia.
+  v_reopened constant text[] := array['status', 'resolution', 'rejection_reason', 'closed_at', 'resolution_summary'];
 begin
-  if old.status = 'cerrado' and (
-       new.status is distinct from old.status
-       or new.resolution is distinct from old.resolution
-       or new.affected_items is distinct from old.affected_items
-       or new.order_id is distinct from old.order_id
-       or new.user_id is distinct from old.user_id
-       or new.failure_type is distinct from old.failure_type
-       or new.cancelled_at is distinct from old.cancelled_at) then
-    raise exception 'CLAIM_TERMINAL_IMMUTABLE';
+  if old.status not in ('cerrado', 'rechazado') then
+    return new;
   end if;
-  if old.status = 'rechazado' and new.status = 'rechazado' and (
-       new.resolution is distinct from old.resolution
-       or new.affected_items is distinct from old.affected_items
-       or new.order_id is distinct from old.order_id
-       or new.user_id is distinct from old.user_id) then
-    raise exception 'CLAIM_TERMINAL_IMMUTABLE';
+  v_old := to_jsonb(old);
+  v_new := to_jsonb(new);
+
+  if old.status = 'rechazado' and new.status is distinct from 'rechazado' then
+    if new.status is distinct from 'en_revision' or new.resolution is not null or new.rejection_reason is not null
+       or new.closed_at is not null or new.resolution_summary is not null then
+      raise exception 'CLAIM_REOPEN_UNAUTHORIZED';
+    end if;
+    foreach v_key in array v_frozen loop
+      if not v_key = any (v_reopened) and v_new->v_key is distinct from v_old->v_key then
+        raise exception 'CLAIM_REOPEN_UNAUTHORIZED';
+      end if;
+    end loop;
+    update public.order_claim_reopen_authorizations
+    set consumed_at = clock_timestamp()
+    where claim_id = old.id and transaction_id = txid_current() and consumed_at is null;
+    if not found then raise exception 'CLAIM_REOPEN_UNAUTHORIZED'; end if;
+    return new;
   end if;
+
+  foreach v_key in array v_frozen loop
+    if v_new->v_key is distinct from v_old->v_key then
+      raise exception 'CLAIM_TERMINAL_IMMUTABLE';
+    end if;
+  end loop;
   return new;
 end;
 $$;
@@ -1488,6 +1536,82 @@ drop trigger if exists aa_guard_order_claim_terminal_immutable on public.order_c
 create trigger aa_guard_order_claim_terminal_immutable
   before update on public.order_claims
   for each row execute function public.guard_order_claim_terminal_immutable();
+
+-- Igual que 20261001120000 salvo la autorización: después de validar permisos,
+-- motivo, CAS y efectos, deja en su transacción la autorización de un solo uso
+-- que exige guard_order_claim_terminal_immutable (actor, motivo y fecha quedan
+-- persistidos además del evento 'claim_review_reopened').
+create or replace function public.reopen_rejected_order_claim(
+  p_claim_id bigint,
+  p_actor_id uuid,
+  p_expected_updated_at timestamptz,
+  p_reason text
+)
+returns public.order_claims
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_claim public.order_claims%rowtype;
+  v_result public.order_claims%rowtype;
+  v_role text;
+  v_reason text := btrim(coalesce(p_reason, ''));
+begin
+  if auth.role() is distinct from 'service_role' then raise exception 'CLAIM_FORBIDDEN'; end if;
+  select rol into v_role from public.profiles where id = p_actor_id;
+  if coalesce(v_role, '') not in ('admin', 'super_admin') then raise exception 'CLAIM_FORBIDDEN'; end if;
+  if length(v_reason) < 10 or length(v_reason) > 1000 then raise exception 'CLAIM_REOPEN_REASON_REQUIRED'; end if;
+
+  -- Mismo orden de locks que mutate_admin_order_claim: pedido -> reclamo.
+  perform 1 from public.ordenes where id = (select order_id from public.order_claims where id = p_claim_id) for update;
+  select * into v_claim from public.order_claims where id = p_claim_id for update;
+  if not found then raise exception 'CLAIM_NOT_FOUND'; end if;
+  if p_expected_updated_at is null or v_claim.updated_at <> p_expected_updated_at then raise exception 'CLAIM_CONFLICT'; end if;
+  if v_claim.status <> 'rechazado' or coalesce(v_claim.failure_type, '') in ('consulta_pedido', 'cancelar_compra') then
+    raise exception 'CLAIM_REOPEN_NOT_ALLOWED';
+  end if;
+
+  if exists (select 1 from public.order_credit_notes where claim_id = v_claim.id and status in ('processing', 'authorized'))
+     or exists (select 1 from public.order_replacements where claim_id = v_claim.id)
+     or exists (select 1 from public.customer_credit_movements where claim_id = v_claim.id)
+     or exists (select 1 from public.order_claim_shipments
+                where claim_id = v_claim.id and creation_status in ('processing', 'created', 'manual_review'))
+     or exists (select 1 from public.order_claim_units
+                where claim_id = v_claim.id
+                  and (role = 'reemplazo' or incident_open or location not in ('con_cliente', 'conservada_cliente')))
+     or exists (
+       select 1 from public.inventory_return_movements m
+       where m.order_id = v_claim.order_id and m.created_at >= v_claim.created_at
+         and m.order_item_id in (select (x->>'order_item_id')::bigint from jsonb_array_elements(v_claim.affected_items) x)
+     ) then
+    raise exception 'CLAIM_REOPEN_HAS_EFFECTS';
+  end if;
+
+  -- Primero las unidades: el rechazo las dejó "con el cliente" definitivamente;
+  -- vuelven a estar pendientes de la nueva decisión.
+  update public.order_claim_units set location = 'con_cliente', updated_at = clock_timestamp()
+  where claim_id = v_claim.id and role = 'original' and location = 'conservada_cliente';
+
+  insert into public.order_claim_reopen_authorizations (claim_id, actor_id, reason)
+  values (v_claim.id, p_actor_id, v_reason);
+
+  update public.order_claims
+  set status = 'en_revision', resolution = null, rejection_reason = null, closed_at = null, resolution_summary = null
+  where id = v_claim.id
+  returning * into v_result;
+
+  perform public.post_order_claim_system_message(v_claim.id,
+    'review_reopened_' || (extract(epoch from clock_timestamp()) * 1000)::bigint::text,
+    'Estamos revisando nuevamente tu reclamo. Te avisamos por acá cuando tengamos una respuesta.', true);
+  perform public.log_order_claim_logistics(v_claim.id, p_actor_id, 'claim_review_reopened',
+    jsonb_build_object('reason', v_reason, 'previousStatus', v_claim.status,
+      'previousRejectionReason', v_claim.rejection_reason, 'previousClosedAt', v_claim.closed_at));
+
+  select * into v_result from public.order_claims where id = v_claim.id;
+  return v_result;
+end;
+$$;
 
 -- Igual que 20261020100000 + DELETE: las soluciones por ítem de un reclamo
 -- terminal tampoco se borran (la guarda previa sólo cubría INSERT/UPDATE).
@@ -1582,6 +1706,194 @@ where o.id = c.order_id and c.resolution = 'cupon_descuento' and c.status not in
   and c.approved_amount is null and o.credit_note_required and o.credit_note_amount > 0
   and not exists (select 1 from public.order_credit_notes n where n.claim_id = c.id and n.status in ('processing', 'authorized'));
 alter table public.order_claims enable trigger ab_capture_order_claim_approved_amount;
+
+-- Igual que 20261020100000 salvo la auditoría del importe del cupón: revisar
+-- el importe antes de emitir la NC sigue permitido (la RPC ya lo impide con una
+-- NC vigente), pero el evento 'claim_update' no guardaba el importe anterior ni
+-- el nuevo. Ahora cada aprobación deja 'claim_coupon_amount_approved'.
+create or replace function public.mutate_admin_order_claim(p_claim_id bigint,p_actor_id uuid,p_expected_updated_at timestamptz,p_patch jsonb)
+returns public.order_claims language plpgsql security definer set search_path=public as $$
+declare
+  v_claim public.order_claims%rowtype;
+  v_order public.ordenes%rowtype;
+  v_role text;
+  v_status text;
+  v_resolution text;
+  v_action text:=coalesce(p_patch->>'action','update');
+  v_message text:=btrim(coalesce(p_patch->>'admin_response',''));
+  v_before text;
+  v_items jsonb;
+  v_item jsonb;
+  v_allowed text[];
+  v_closed public.order_claims%rowtype;
+  v_close_message text;
+  v_mixed_blockers text[];
+begin
+  if auth.role() is distinct from 'service_role' then raise exception 'CLAIM_FORBIDDEN'; end if;
+  select rol into v_role from public.profiles where id=p_actor_id;
+  if coalesce(v_role,'') not in ('operador','admin','super_admin') then raise exception 'CLAIM_FORBIDDEN'; end if;
+  select * into v_order from public.ordenes where id=(select order_id from public.order_claims where id=p_claim_id) for update;
+  select * into v_claim from public.order_claims where id=p_claim_id for update;
+  if not found then raise exception 'CLAIM_NOT_FOUND'; end if;
+  if p_expected_updated_at is null or v_claim.updated_at<>p_expected_updated_at then raise exception 'CLAIM_CONFLICT'; end if;
+  if v_claim.status in ('cerrado','rechazado') then raise exception 'CLAIM_TERMINAL'; end if;
+  if length(v_message)>2000 then raise exception 'CLAIM_INVALID'; end if;
+  v_before:=v_claim.status;
+  v_status:=coalesce(p_patch->>'status',v_claim.status);
+  v_resolution:=coalesce(p_patch->>'resolution',v_claim.resolution);
+  if exists(select 1 from public.order_credit_notes where claim_id=v_claim.id and status in ('processing','authorized')) and
+    (v_resolution is distinct from v_claim.resolution or v_status='rechazado') then raise exception 'CLAIM_RESOLUTION_LOCKED'; end if;
+  if v_status='cerrado' and exists(select 1 from public.order_credit_notes where claim_id=v_claim.id and
+    (status='processing' or status='authorized' and settlement_status is distinct from 'completado')) then raise exception 'CLAIM_CREDIT_PENDING'; end if;
+  -- Reclamo mixto: se define sólo con su propia operación; dejar de serlo, sin efectos.
+  if v_resolution='mixta' and v_claim.resolution is distinct from 'mixta' then raise exception 'CLAIM_INVALID'; end if;
+  if v_claim.resolution='mixta' and v_resolution is distinct from 'mixta' then
+    if exists(select 1 from public.order_replacements where claim_id=v_claim.id and quantity>reverted_quantity) then raise exception 'CLAIM_RESOLUTION_LOCKED'; end if;
+  end if;
+  -- Las consultas y cancelaciones conservan su circuito propio.
+  if v_claim.failure_type='consulta_pedido' and
+    (v_action<>'update' or v_status not in ('recibido','en_revision','falta_informacion','cerrado','rechazado') or coalesce(v_resolution,'otro') not in ('otro','rechazado')) then raise exception 'CLAIM_INVALID'; end if;
+  if v_claim.failure_type='cancelar_compra' and v_action='update' and
+    (v_status is distinct from v_claim.status and v_status not in ('en_revision','falta_informacion') or v_resolution is distinct from v_claim.resolution) then raise exception 'CLAIM_CANCELLATION_ACTION'; end if;
+  if v_action='affected_items' then
+    if v_role='operador' then raise exception 'CLAIM_FORBIDDEN'; end if;
+    if coalesce(v_claim.failure_type,'') in ('consulta_pedido','cancelar_compra') then raise exception 'CLAIM_INVALID'; end if;
+    v_items:=p_patch->'items';
+    if jsonb_typeof(v_items) is distinct from 'array' or jsonb_array_length(v_items)=0 or (select count(distinct x->>'order_item_id') from jsonb_array_elements(v_items) x)<>jsonb_array_length(v_items) then raise exception 'CLAIM_INVALID_ITEMS'; end if;
+    perform id from public.orden_items where orden_id=v_order.id order by id for update;
+    if exists(select 1 from public.order_credit_notes where claim_id=v_claim.id and status in ('processing','authorized')) then raise exception 'CLAIM_ITEMS_LOCKED'; end if;
+    for v_item in select * from jsonb_array_elements(v_items) loop
+      if not exists(select 1 from public.orden_items where id=(v_item->>'order_item_id')::bigint and orden_id=v_order.id and (v_item->>'quantity')::integer between 1 and cantidad) then raise exception 'CLAIM_INVALID_ITEMS'; end if;
+    end loop;
+    if exists(select 1 from public.orden_items i where i.orden_id=v_order.id and i.return_inventory_processed_at is not null and
+      (select x->>'quantity' from jsonb_array_elements(v_claim.affected_items) x where (x->>'order_item_id')::bigint=i.id) is distinct from
+      (select x->>'quantity' from jsonb_array_elements(v_items) x where (x->>'order_item_id')::bigint=i.id)) then raise exception 'CLAIM_ITEMS_LOCKED'; end if;
+    update public.order_claims set affected_items=v_items,affected_items_updated_at=now(),affected_items_updated_by=p_actor_id where id=v_claim.id;
+  else
+    if v_action='approve_cancellation' then
+      if v_role='operador' then raise exception 'CLAIM_FORBIDDEN'; end if;
+      perform public.approve_order_claim_cancellation(v_claim.id,p_actor_id,v_role,v_message);
+      v_status:='cerrado'; v_resolution:='otro'; v_message:='';
+    elsif v_action='reject_cancellation' then
+      if v_claim.failure_type is distinct from 'cancelar_compra' or length(v_message)<5 then raise exception 'CLAIM_INVALID'; end if;
+      v_status:='rechazado'; v_resolution:='rechazado';
+    elsif v_action='mark_credit_note_issued' then
+      if v_role='operador' then raise exception 'CLAIM_FORBIDDEN'; end if;
+      if coalesce(v_claim.resolution,'') not in ('cupon_descuento','saldo_a_favor') or not exists(
+        select 1 from public.order_credit_notes n join public.customer_credit_movements m on m.order_id=n.order_id and m.claim_id=n.claim_id
+        where n.claim_id=v_claim.id and n.status='authorized' and n.destination='customer_balance' and n.cae is not null and n.settlement_status='completado' and m.source_type='credit_note' and m.movement_type='credit'
+      ) or exists(select 1 from public.order_credit_notes where claim_id=v_claim.id and (status='processing' or status='authorized' and settlement_status is distinct from 'completado')) then raise exception 'CLAIM_CREDIT_PENDING'; end if;
+      v_status:='cerrado'; v_resolution:=v_claim.resolution;
+      v_message:='La nota de crédito fue autorizada y el saldo ya está acreditado en tu cuenta.';
+    elsif v_action='mark_refund_done' then
+      if v_role='operador' then raise exception 'CLAIM_FORBIDDEN'; end if;
+      if coalesce(v_claim.resolution,'') not in ('reintegro_total','reintegro_parcial') or v_order.financial_status is distinct from 'refunded' or not exists(
+        select 1 from public.order_credit_notes n join public.order_refund_proofs f on f.order_id=n.order_id and f.id::text=n.settlement_reference where n.claim_id=v_claim.id and n.status='authorized' and n.destination='external_refund' and n.settlement_status='completado' and n.cae is not null
+      ) or exists(select 1 from public.order_credit_notes where claim_id=v_claim.id and (status='processing' or status='authorized' and settlement_status is distinct from 'completado')) then raise exception 'CLAIM_REFUND_PENDING'; end if;
+      v_status:='cerrado'; v_resolution:=v_claim.resolution;
+      v_message:='El reintegro fue registrado. Podés consultar el comprobante desde el detalle de tu compra.';
+    elsif v_action<>'update' then raise exception 'CLAIM_INVALID';
+    end if;
+    v_allowed:=case v_claim.status
+      when 'recibido' then array['en_revision','falta_informacion','aprobado','reintegro_pendiente','rechazado','cerrado']
+      when 'en_revision' then array['falta_informacion','aprobado','reintegro_pendiente','rechazado','cerrado']
+      when 'falta_informacion' then array['en_revision','aprobado','reintegro_pendiente','rechazado','cerrado']
+      when 'aprobado' then array['cambio_pendiente','cupon_pendiente','rechazado','cerrado']
+      else array['cerrado','rechazado'] end;
+    if v_status<>v_claim.status and not v_status=any(v_allowed) then raise exception 'CLAIM_TRANSITION'; end if;
+    if v_role='operador' and (p_patch ? 'credit_note_amount' or ((v_resolution in ('reintegro_total','reintegro_parcial','saldo_a_favor','cupon_descuento','cambio_producto','envio_unidad_faltante','mixta') or v_claim.resolution in ('reintegro_total','reintegro_parcial','saldo_a_favor','cupon_descuento','cambio_producto','envio_unidad_faltante','mixta')) and (v_status<>v_claim.status or v_resolution is distinct from v_claim.resolution))) then raise exception 'CLAIM_FORBIDDEN'; end if;
+    -- El cierre genérico y la confirmación de entrega comparten esta RPC.
+    -- También protege un PATCH que intenta cambiar la resolución al cerrar.
+    if v_status='cerrado' and (v_resolution='cambio_producto' or v_claim.resolution='cambio_producto') then
+      if not exists (
+        select 1
+        from public.order_replacements r
+        join public.orden_items i on i.id=r.original_order_item_id and i.orden_id=v_claim.order_id
+        where r.original_order_id=v_claim.order_id and r.quantity>0
+          and exists (
+            select 1 from jsonb_array_elements(v_claim.affected_items) item
+            where item->>'order_item_id'=i.id::text and (item->>'quantity')::numeric>0
+          )
+          and (
+            r.claim_id=v_claim.id
+            or (r.claim_id is null and not exists (
+              -- Sólo el único reclamo formal puede usar registros históricos.
+              select 1 from public.order_claims other_claim
+              where other_claim.order_id=v_claim.order_id and other_claim.id<>v_claim.id
+                and coalesce(other_claim.failure_type,'') not in ('consulta_pedido','cancelar_compra')
+            ))
+          )
+      ) then raise exception 'CLAIM_REPLACEMENT_REQUIRED'; end if;
+    end if;
+    -- Reclamo mixto: cierra sólo con cada unidad resuelta y cada solución completa.
+    if v_status='cerrado' and v_resolution='mixta' then
+      v_mixed_blockers:=public.order_claim_mixed_blockers(v_claim);
+      if coalesce(array_length(v_mixed_blockers,1),0)>0 then raise exception '%', v_mixed_blockers[1]; end if;
+    end if;
+    if v_claim.resolution in ('reintegro_total','reintegro_parcial','saldo_a_favor','cupon_descuento') and v_resolution is distinct from v_claim.resolution and v_claim.status not in ('recibido','en_revision','falta_informacion') and
+      not (v_status='rechazado' and not exists(select 1 from public.order_credit_notes where claim_id=v_claim.id and status in ('processing','authorized'))) then raise exception 'CLAIM_RESOLUTION_LOCKED'; end if;
+    if v_status='cerrado' and v_resolution in ('reintegro_total','reintegro_parcial','saldo_a_favor','cupon_descuento') and v_action not in ('mark_refund_done','mark_credit_note_issued') then raise exception 'CLAIM_ECONOMIC_CLOSE'; end if;
+    if v_status in ('aprobado','reintegro_pendiente','cambio_pendiente','cupon_pendiente','cerrado') and (v_resolution is null or v_resolution='rechazado') then raise exception 'CLAIM_INVALID'; end if;
+    if v_status='cambio_pendiente' and v_resolution not in ('cambio_producto','envio_unidad_faltante','otro') then raise exception 'CLAIM_INVALID'; end if;
+    if v_status='reintegro_pendiente' and v_resolution not in ('reintegro_total','reintegro_parcial') then raise exception 'CLAIM_INVALID'; end if;
+    if v_status='cupon_pendiente' and v_resolution not in ('cupon_descuento','saldo_a_favor') then raise exception 'CLAIM_INVALID'; end if;
+    if v_resolution='rechazado' and v_status<>'rechazado' then raise exception 'CLAIM_INVALID'; end if;
+    if v_status='rechazado' and (v_resolution<>'rechazado' or length(coalesce(nullif(p_patch->>'rejection_reason',''),v_message))<5) then raise exception 'CLAIM_INVALID'; end if;
+    if p_patch ? 'credit_note_amount' then
+      if v_role='operador' then raise exception 'CLAIM_FORBIDDEN'; end if;
+      if v_action<>'update' or v_status<>'aprobado' or v_resolution is distinct from 'cupon_descuento' or exists(select 1 from public.order_credit_notes where claim_id=v_claim.id and status in ('processing','authorized')) then raise exception 'CLAIM_INVALID_AMOUNT'; end if;
+      if p_patch->>'credit_note_amount' is null or (p_patch->>'credit_note_amount')::numeric<=0 or (p_patch->>'credit_note_amount')::numeric > v_order.total-coalesce((select sum(total_amount) from public.order_credit_notes where order_id=v_order.id and status in ('processing','authorized')),0) then raise exception 'CLAIM_INVALID_AMOUNT'; end if;
+      update public.ordenes set credit_note_required=true,credit_note_amount=(p_patch->>'credit_note_amount')::numeric where id=v_order.id;
+    end if;
+    if v_claim.resolution='mixta' and v_resolution is distinct from 'mixta' then
+      delete from public.order_claim_item_resolutions where claim_id=v_claim.id;
+    end if;
+    if v_action<>'approve_cancellation' then
+      update public.order_claims set status=v_status,resolution=v_resolution,
+        admin_response=case when p_patch ? 'admin_response' or v_action in ('mark_refund_done','mark_credit_note_issued') then nullif(v_message,'') else admin_response end,
+        rejection_reason=case when v_status='rechazado' then coalesce(nullif(p_patch->>'rejection_reason',''),v_message) else rejection_reason end,
+        closed_at=case when v_status in ('cerrado','rechazado') then now() else null end,
+        refund_completed_at=case when v_action='mark_refund_done' then now() else refund_completed_at end,
+        refund_completed_by=case when v_action='mark_refund_done' then p_actor_id else refund_completed_by end,
+        first_reviewed_at=case when v_claim.status='recibido' and v_status='en_revision' then now() else first_reviewed_at end,
+        first_reviewed_by=case when v_claim.status='recibido' and v_status='en_revision' then p_actor_id else first_reviewed_by end,
+        admin_needs_action=case when v_status in ('cerrado','rechazado') or v_status='aprobado' and v_status<>v_claim.status or v_claim.status='recibido' and v_status='en_revision' then false else admin_needs_action end
+      where id=v_claim.id
+      returning * into v_closed;
+      if v_status in ('cerrado','rechazado') and coalesce(v_claim.failure_type,'') not in ('consulta_pedido','cancelar_compra') then
+        -- Un solo mensaje de cierre con la resolución congelada. El texto
+        -- libre del admin se agrega si lo escribió y no repite el motivo.
+        v_close_message:=public.order_claim_resolution_message(v_closed.resolution_summary);
+        if v_action='update' and p_patch ? 'admin_response' and length(v_message)>0
+          and v_message is distinct from coalesce(v_closed.rejection_reason,'') then
+          v_close_message:=v_close_message||E'\n\n'||v_message;
+        end if;
+        insert into public.order_claim_messages(claim_id,author_user_id,author_role,message) values(v_claim.id,p_actor_id,v_role,v_close_message);
+      elsif length(v_message)>0 and (coalesce((p_patch->>'append_message')::boolean,false) or v_message is distinct from v_claim.admin_response) then
+        insert into public.order_claim_messages(claim_id,author_user_id,author_role,message) values(v_claim.id,p_actor_id,v_role,v_message);
+      elsif v_status in ('cerrado','rechazado') then
+        insert into public.order_claim_messages(claim_id,author_user_id,author_role,message) values(v_claim.id,p_actor_id,v_role,case when v_status='cerrado' then 'BEYONIX finalizó el reclamo.' else 'BEYONIX rechazó el reclamo: '||coalesce(p_patch->>'rejection_reason',v_message) end);
+      end if;
+    end if;
+  end if;
+  -- Cupón: cada aprobación o revisión del importe (antes de la NC) queda auditada
+  -- con el importe anterior y el nuevo, el Admin, la fecha y su mensaje.
+  if p_patch ? 'credit_note_amount' then
+    insert into public.order_audit_events(order_id,actor_type,actor_id,action,previous_status,new_status,metadata)
+    select v_order.id,'admin',p_actor_id,'claim_coupon_amount_approved',v_before,v_status,
+      jsonb_build_object('claimId',v_claim.id,'previousAmount',v_claim.approved_amount,'newAmount',c.approved_amount,
+        'previousOrderAmount',v_order.credit_note_amount,'message',nullif(v_message,''))
+    from public.order_claims c where c.id=v_claim.id;
+  end if;
+  insert into public.order_audit_events(order_id,actor_type,actor_id,action,previous_status,new_status,metadata)
+  values(v_order.id,'admin',p_actor_id,'claim_'||v_action,v_before,v_status,jsonb_build_object('claimId',v_claim.id,'previousResolution',v_claim.resolution,'newResolution',v_resolution,'previousItems',case when v_action='affected_items' then v_claim.affected_items end,'affectedItems',v_items,
+    'resolutionLabel',case when v_status in ('cerrado','rechazado') then (select resolution_summary->>'label' from public.order_claims where id=v_claim.id) end));
+  select * into v_claim from public.order_claims where id=v_claim.id;
+  return v_claim;
+end $$;
+
+revoke all on function public.mutate_admin_order_claim(bigint,uuid,timestamptz,jsonb) from public, anon, authenticated;
+grant execute on function public.mutate_admin_order_claim(bigint,uuid,timestamptz,jsonb) to service_role;
 
 -- Cierre de reclamos con solución económica (con o sin pérdida) -------------
 -- mutate_admin_order_claim ya exige order_claim_mixed_blockers (mixto) y
@@ -1854,8 +2166,9 @@ declare
 begin
   if tg_op = 'UPDATE' then
     -- Una NC vigente nunca pasa a cubrir otro reclamo (ni una NC del pedido se
-    -- asigna a un reclamo): su dinero ya tiene destinatario. Desvincularla
-    -- (FK ON DELETE SET NULL) sigue permitido salvo que sea evidencia congelada.
+    -- asigna a un reclamo): su dinero ya tiene destinatario. Desvincular una NC
+    -- en proceso sigue permitido; una autorizada nunca (ni por el FK ON DELETE
+    -- SET NULL: guard_order_credit_note_authorized_immutable).
     if new.claim_id is not null and new.claim_id is distinct from old.claim_id
        and (old.status in ('processing', 'authorized') or new.status in ('processing', 'authorized')) then
       raise exception 'CREDIT_NOTE_CLAIM_IMMUTABLE';
@@ -1893,6 +2206,70 @@ drop trigger if exists guard_order_credit_note_compensation_evidence on public.o
 create trigger guard_order_credit_note_compensation_evidence
   before update or delete on public.order_credit_notes
   for each row execute function public.guard_order_credit_note_compensation_evidence();
+
+-- NC autorizada = comprobante fiscal emitido -----------------------------------
+-- Desde la autorización (CAE), sus importes y su desglose (lo que ARCA autorizó
+-- y lo que la liquidación debe devolver o acreditar), su pedido, su reclamo, su
+-- motivo, su destino y sus datos fiscales quedan fijos: bajar el importe permitiría liquidar (y
+-- cerrar el reclamo) con menos dinero; subirlo, devolver más de lo autorizado.
+-- También el UPDATE que autoriza: no cambia importes en el mismo paso. Sigue
+-- libre lo operativo de la liquidación y la gestión (settlement_*, management_*,
+-- error, finalized_at, stock_*, recepción), así que conciliaciones MP,
+-- comprobantes y reintentos idempotentes funcionan igual. Una NC autorizada no
+-- se borra. Las NC existentes no se revalidan. Rige para UPDATE directo, RPC y
+-- service_role (trigger); el lock de la fila serializa ediciones concurrentes.
+create or replace function public.guard_order_credit_note_authorized_immutable()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_old jsonb := to_jsonb(old);
+  v_new jsonb;
+  v_key text;
+begin
+  if tg_op = 'DELETE' then
+    if old.status = 'authorized' or old.cae is not null then
+      raise exception 'CREDIT_NOTE_AUTHORIZED_IMMUTABLE';
+    end if;
+    return old;
+  end if;
+  if old.status is distinct from 'authorized' and old.cae is null and new.status is distinct from 'authorized' then
+    return new;
+  end if;
+  v_new := to_jsonb(new);
+  -- Asociación y motivo: una NC autorizada nunca se desvincula de su reclamo
+  -- (claim_id -> NULL), ni pasa a otro, ni cambia el motivo que emitió.
+  foreach v_key in array array['order_id', 'claim_id', 'reason', 'operation_type', 'reason_code', 'reason_detail',
+    'resolution_type', 'destination', 'total_amount', 'items_amount', 'manual_amount',
+    'external_amount', 'customer_credit_amount', 'requested_total', 'original_shipping_paid',
+    'original_shipping_refunded', 'original_shipping_discounted', 'other_adjustment_amount', 'return_shipping_cost',
+    'new_shipping_cost', 'invoice_point', 'invoice_number', 'invoice_arca_environment'] loop
+    if v_new->v_key is distinct from v_old->v_key then
+      raise exception 'CREDIT_NOTE_AUTHORIZED_IMMUTABLE';
+    end if;
+  end loop;
+  -- Datos de la autorización: se fijan al autorizar y después no cambian
+  -- (mismo criterio que aa_guard_credit_note_cae_immutable, acá también).
+  if old.status = 'authorized' or old.cae is not null then
+    if old.status = 'authorized' and new.status is distinct from 'authorized' then
+      raise exception 'CREDIT_NOTE_AUTHORIZED_IMMUTABLE';
+    end if;
+    foreach v_key in array array['cae', 'voucher_point', 'voucher_number', 'cae_due', 'authorized_at', 'arca_environment', 'requested_date'] loop
+      if v_new->v_key is distinct from v_old->v_key then
+        raise exception 'CREDIT_NOTE_AUTHORIZED_IMMUTABLE';
+      end if;
+    end loop;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists aa_guard_credit_note_authorized_immutable on public.order_credit_notes;
+create trigger aa_guard_credit_note_authorized_immutable
+  before update or delete on public.order_credit_notes
+  for each row execute function public.guard_order_credit_note_authorized_immutable();
 
 create or replace function public.guard_customer_credit_movement_compensation_evidence()
 returns trigger
@@ -2228,6 +2605,10 @@ revoke all on function public.order_claim_credited_quantity(bigint, bigint, text
 revoke all on function public.guard_order_claim_financial_close() from public, anon, authenticated;
 revoke all on function public.guard_order_claim_terminal_immutable() from public, anon, authenticated;
 revoke all on function public.capture_order_claim_approved_amount() from public, anon, authenticated;
+revoke all on function public.guard_order_credit_note_authorized_immutable() from public, anon, authenticated;
+-- Misma firma y permisos que 20261001120000.
+revoke all on function public.reopen_rejected_order_claim(bigint, uuid, timestamptz, text) from public, anon, authenticated;
+grant execute on function public.reopen_rejected_order_claim(bigint, uuid, timestamptz, text) to service_role;
 -- Misma firma y permisos que 20261020100000.
 revoke all on function public.guard_order_claim_item_resolution() from public, anon, authenticated;
 revoke all on function public.assert_order_claim_compensation_mutable(bigint[]) from public, anon, authenticated, service_role;

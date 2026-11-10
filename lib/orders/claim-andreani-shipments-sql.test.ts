@@ -1048,7 +1048,12 @@ test("reapertura bloqueada con efectos reales (operación Andreani generada, sal
     await db2.query("insert into customer_credit_movements(order_id,claim_id,source_type,movement_type) values(1,$1,'credit_note','credit')", [credit])
     await assert.rejects(reopen(db2, credit), /CLAIM_REOPEN_HAS_EFFECTS/, "hubo saldo a favor")
     await db2.query("delete from customer_credit_movements where claim_id=$1", [credit])
+    // Rechazado: el tipo tampoco se cambia para habilitar (o impedir) la reapertura.
+    await assert.rejects(db2.query("update order_claims set failure_type='consulta_pedido' where id=$1", [credit]), /CLAIM_TERMINAL_IMMUTABLE/)
+    // Una consulta rechazada (tipo fijado mientras estaba abierta) no se reabre.
+    await reopen(db2, credit)
     await db2.query("update order_claims set failure_type='consulta_pedido' where id=$1", [credit])
+    await reject(db2, credit)
     await assert.rejects(reopen(db2, credit), /CLAIM_REOPEN_NOT_ALLOWED/, "consultas y cancelaciones tienen su circuito")
   } finally {
     await db2.close()
