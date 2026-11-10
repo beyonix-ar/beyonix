@@ -238,6 +238,7 @@ export async function finalizeCreditNote(
         userId: order.usuario_id,
         orderId,
         amount: externalAmount,
+        creditNoteUuid: noteId,
         creditNoteNumber: note.voucher_number,
         creditNotePoint: note.voucher_point,
         creditNoteCae: note.cae,

@@ -156,6 +156,10 @@ export async function POST(request: Request, context: Context) {
     const detail = error instanceof Error ? error.message : ""
     const inspectionError = RETURN_INSPECTION_ERRORS[Object.keys(RETURN_INSPECTION_ERRORS).find((code) => detail.includes(code)) ?? ""]
     if (inspectionError) return NextResponse.json({ error: inspectionError }, { status: 409 })
+    // El dinero del comprobante/refund ya está asignado a otras notas o no es de este pedido/pago.
+    if (detail.includes("CREDIT_NOTE_REFUND_EVIDENCE_EXHAUSTED") || detail.includes("CREDIT_NOTE_REFUND_ALLOCATION_INVALID")) {
+      return NextResponse.json({ error: "El reintegro registrado no alcanza para cubrir las notas de crédito pendientes del pedido. Revisá el importe del comprobante." }, { status: 409 })
+    }
     if (detail.includes("DISPATCH_PHYSICAL_RESOLUTION_REQUIRED")) {
       return NextResponse.json({ error: "Requiere acción manual: el pedido ya estaba armado. Escaneá el pedido en Despachos para confirmar el retiro físico antes de reintegrar." }, { status: 409 })
     }

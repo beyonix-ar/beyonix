@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto"
 import { readFileSync } from "node:fs"
 import test from "node:test"
 import { PGlite } from "@electric-sql/pglite"
+import { creditNoteToBalance, refundWithProof } from "./fixtures/claim-compensation-evidence.ts"
 
 // Devolución por retiro de un cadete (Envío BEYONIX) con la cadena REAL de
 // migraciones de reclamos y el motor REAL de stock (PGlite): coordinación,
@@ -545,27 +546,33 @@ for (const [resolution, claimStatus, destination] of [
       await assert.rejects(forceCancel(db, id), /CLAIM_CANCEL_TRANSIT_LOSS/)
       await assert.rejects(forceStatus(db, id, "cerrado"), /CLAIM_TRANSIT_LOSS_UNRESOLVED/)
       // Solicitado / en curso: NC en proceso.
-      const note = await creditNote(db, id, destination, "processing", "pendiente", 2)
+      const note = await creditNote(db, id, destination, "processing", "pendiente", 1)
       const inProgress = await cancelBlockers(db, id)
       assert.ok(inProgress.includes("transit_loss_pending") && inProgress.includes("credit_note_pending"))
       await assert.rejects(forceStatus(db, id, "cerrado"), /CLAIM_TRANSIT_LOSS_UNRESOLVED/)
       // Autorizada pero sin liquidar (reintegro no procesado / saldo no acreditado).
-      await db.query("update order_credit_notes set status='authorized', cae='CAE-1' where id=$1", [note])
+      await db.query("update order_credit_notes set status='authorized', cae='CAE-1', voucher_point=1, voucher_number=77 where id=$1", [note])
       await assert.rejects(forceStatus(db, id, "cerrado"), /CLAIM_TRANSIT_LOSS_UNRESOLVED/)
       await db.query("update order_credit_notes set settlement_status='procesando' where id=$1", [note])
       await assert.rejects(forceStatus(db, id, "cerrado"), /CLAIM_TRANSIT_LOSS_UNRESOLVED/)
-      // Liquidada pero cubriendo sólo una de las dos unidades perdidas.
-      await db.query("update order_credit_note_items set quantity=1 where credit_note_id=$1", [note])
+      // Liquidada pero cubriendo sólo una de las dos unidades perdidas (y sus renglones ya no cambian).
       await db.query("update order_credit_notes set settlement_status='completado' where id=$1", [note])
       await assert.rejects(forceStatus(db, id, "cerrado"), /CLAIM_TRANSIT_LOSS_UNRESOLVED/)
-      // Liquidada por las dos: corresponde finalizar; cancelar, nunca.
-      await db.query("update order_credit_note_items set quantity=2 where credit_note_id=$1", [note])
+      await assert.rejects(db.query("update order_credit_note_items set quantity=2 where credit_note_id=$1", [note]), /CREDIT_NOTE_ITEMS_LOCKED/)
+      // Una segunda NC por la otra unidad, marcada liquidada sin el dinero persistido: nunca alcanza.
+      const second = await creditNote(db, id, destination, "processing", "pendiente", 1)
+      await db.query("update order_credit_notes set status='authorized', cae='CAE-2', voucher_point=1, voucher_number=78, settlement_status='completado' where id=$1", [second])
+      await assert.rejects(forceStatus(db, id, "cerrado"), /CLAIM_TRANSIT_LOSS_UNRESOLVED/)
+      // Con la evidencia real (comprobante del reintegro / crédito en el ledger): corresponde finalizar; cancelar, nunca.
+      await db.query("update order_credit_notes set settlement_status='pendiente' where id in ($1,$2)", [note, second])
+      if (destination === "external_refund") await refundWithProof(db, [note, second])
+      else for (const credited of [note, second]) await creditNoteToBalance(db, credited)
       const settled = await cancelBlockers(db, id)
       assert.ok(settled.includes("transit_loss_resolved") && settled.includes("credit_note_issued"))
       await assert.rejects(forceCancel(db, id), /CLAIM_CANCEL_TRANSIT_LOSS/)
       await forceStatus(db, id, "cerrado")
       assert.deepEqual(await status(db, id), { status: "cerrado", cancelled_at: null })
-      assert.equal(await count(db, "select count(*)::int n from order_credit_notes where claim_id=$1", [id]), 1, "los movimientos financieros se conservan")
+      assert.equal(await count(db, "select count(*)::int n from order_credit_notes where claim_id=$1", [id]), 2, "los movimientos financieros se conservan")
     } finally {
       await db.close()
     }

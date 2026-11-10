@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto"
 import { readFileSync } from "node:fs"
 import test from "node:test"
 import { PGlite } from "@electric-sql/pglite"
+import { authorizedClaimNote, refundWithProof } from "./fixtures/claim-compensation-evidence.ts"
 
 // Logística de postventa con la cadena REAL de migraciones de reclamos y el
 // motor REAL de stock (PGlite). Postventa SÓLO por sucursal Andreani y con el
@@ -368,6 +369,10 @@ test("DEVOLUCIÓN para reintegro: RETIRO sucursal -> recepción -> inspección; 
     await assert.rejects(db.query("update order_claims set status='cerrado' where id=$1", [id]), /CLAIM_LOGISTICS_OPEN/)
     await inspectOriginal(db, id, 1, 2, 0)
     assert.equal(await stock(db, 1), 7)
+    // Un reintegro sólo se finaliza con el dinero devuelto (NC + comprobante asignado), ni por UPDATE directo.
+    await assert.rejects(db.query("update order_claims set status='cerrado' where id=$1", [id]), /CLAIM_REFUND_PENDING/)
+    const note = await authorizedClaimNote(db, { claimId: id, destination: "external_refund", lines: [{ orderItemId: 1, quantity: 2 }], amount: 60000 })
+    await refundWithProof(db, [note.id])
     await db.query("update order_claims set status='cerrado' where id=$1", [id])
   } finally {
     await db.close()

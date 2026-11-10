@@ -52,13 +52,17 @@ function formatCreditNoteId(point?: number | string | null, number?: number | st
   return `${pointText}-${numberText.padStart(8, "0")}`
 }
 
+// Incluye el UUID de la NC: el punto y número fiscal se repiten entre ambientes
+// de ARCA, así que solos no identifican a qué nota pertenece el crédito.
 function getCreditNoteSourceKey({
   orderId,
+  creditNoteUuid,
   creditNotePoint,
   creditNoteNumber,
   creditNoteCae,
 }: {
   orderId: number
+  creditNoteUuid: string
   creditNotePoint?: number | string | null
   creditNoteNumber?: number | string | null
   creditNoteCae?: string | null
@@ -69,7 +73,7 @@ function getCreditNoteSourceKey({
     String(creditNoteCae ?? "").trim() ||
     "autorizada"
 
-  return `credit-note:${orderId}:${point}:${number}`
+  return `credit-note:${orderId}:${point}:${number}:${creditNoteUuid}`
 }
 
 export async function getCustomerCreditBalance(
@@ -220,6 +224,7 @@ export async function creditCustomerForOrderCreditNote(
     userId,
     orderId,
     amount,
+    creditNoteUuid,
     creditNoteNumber,
     creditNotePoint,
     creditNoteCae,
@@ -230,6 +235,8 @@ export async function creditCustomerForOrderCreditNote(
     userId: string | null | undefined
     orderId: number
     amount: number
+    /** order_credit_notes.id: vincula el crédito a UNA nota (la base lo exige como evidencia). */
+    creditNoteUuid: string
     creditNoteNumber?: number | string | null
     creditNotePoint?: number | string | null
     creditNoteCae?: string | null
@@ -248,15 +255,19 @@ export async function creditCustomerForOrderCreditNote(
     throw new Error("El monto a acreditar debe ser mayor que cero.")
   }
 
+  if (!creditNoteUuid) {
+    throw new Error("Falta identificar la nota de crédito a acreditar.")
+  }
+
   const creditNoteId = formatCreditNoteId(creditNotePoint, creditNoteNumber)
+  // Reintento: el crédito de ESTA nota (por su UUID), nunca el de otra nota con
+  // el mismo número fiscal (los números se repiten entre ambientes de ARCA).
   const { data: existingMovements, error: existingError } = await admin
     .from("customer_credit_movements")
-    .select("id, resulting_balance")
-    .eq("user_id", userId)
+    .select("id, user_id, order_id, resulting_balance")
     .eq("movement_type", "credit")
     .eq("source_type", "credit_note")
-    .eq("order_id", orderId)
-    .eq("credit_note_id", creditNoteId)
+    .eq("metadata->>order_credit_note_id", creditNoteUuid)
     .limit(1)
 
   if (existingError) {
@@ -266,11 +277,37 @@ export async function creditCustomerForOrderCreditNote(
   const existingMovement = existingMovements?.[0]
 
   if (existingMovement) {
+    if (existingMovement.user_id !== userId || Number(existingMovement.order_id) !== orderId) {
+      throw new Error("El saldo de esta nota de crédito figura acreditado en otra cuenta o pedido. Revisalo antes de continuar.")
+    }
     return {
       movement_id: existingMovement.id,
       resulting_balance:
         existingMovement.resulting_balance ?? await getCustomerCreditBalance(admin, userId),
     }
+  }
+
+  // Un crédito histórico del mismo comprobante sin UUID no se atribuye
+  // automáticamente: podría ser de esta nota (y acreditar dos veces) o de otra.
+  const { data: legacyMovements, error: legacyError } = await admin
+    .from("customer_credit_movements")
+    .select("id, metadata")
+    .eq("movement_type", "credit")
+    .eq("source_type", "credit_note")
+    .eq("order_id", orderId)
+    .eq("credit_note_id", creditNoteId)
+
+  if (legacyError) {
+    throw new Error(legacyError.message || "No se pudo verificar el saldo ya acreditado.")
+  }
+
+  if ((legacyMovements ?? []).some((movement) => {
+    const linked = movement.metadata && typeof movement.metadata === "object"
+      ? (movement.metadata as Record<string, unknown>).order_credit_note_id
+      : undefined
+    return typeof linked !== "string" || linked.length === 0
+  })) {
+    throw new Error("Ya existe un crédito de saldo para este comprobante sin nota vinculada. Requiere revisión manual antes de acreditar.")
   }
 
   return createCustomerCreditMovement(admin, {
@@ -289,9 +326,11 @@ export async function creditCustomerForOrderCreditNote(
       credit_note_cae: creditNoteCae ?? null,
       order_public_id: `BX-${1000 + orderId}`,
       ...metadata,
+      order_credit_note_id: creditNoteUuid,
     },
     sourceKey: getCreditNoteSourceKey({
       orderId,
+      creditNoteUuid,
       creditNotePoint,
       creditNoteNumber,
       creditNoteCae,

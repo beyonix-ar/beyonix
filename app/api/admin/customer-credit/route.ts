@@ -265,6 +265,14 @@ export async function POST(request: Request) {
         { status: 409 }
       )
     }
+    // Compensación de un reclamo ya finalizado: la base no permite revertirla
+    // (dejaría al cliente sin la solución con la que se cerró).
+    if (error instanceof Error && error.message.includes("CLAIM_COMPENSATION_EVIDENCE_LOCKED")) {
+      return NextResponse.json(
+        { error: "Este saldo es la compensación de un reclamo ya finalizado: no se puede revertir. Si hace falta corregir el saldo, registrá un ajuste manual." },
+        { status: 409 }
+      )
+    }
     return NextResponse.json(
       {
         error:

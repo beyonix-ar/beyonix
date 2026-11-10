@@ -62,6 +62,7 @@ export async function POST(
       userId: order.usuario_id,
       orderId,
       amount: creditAmount,
+      creditNoteUuid: String(note.id),
       creditNoteNumber: Number(note.voucher_number),
       creditNotePoint: Number(note.voucher_point),
       creditNoteCae: note.cae,
