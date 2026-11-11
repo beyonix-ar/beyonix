@@ -16,6 +16,7 @@ const stubs: Plugin = {
         export function useRouter() { return router }
         export function useSearchParams() { return new URLSearchParams() }`,
       "next/link": `import { createElement } from "react"; export default function Link(props) { return createElement("a", { href: props.href, className: props.className }, props.children) }`,
+      "next/image": `import { createElement } from "react"; export default function Image({ src, alt, fill, priority, sizes, ...props }) { return createElement("img", { ...props, src: typeof src === "string" ? src : src?.src, alt }) }`,
     }
     for (const name of Object.keys(modules)) {
       pluginBuild.onResolve({ filter: new RegExp(`^${name.replace(/[/.]/g, "\\$&")}$`) }, () => ({ path: name, namespace: "stub" }))
