@@ -1,0 +1,2 @@
+# Scripts de despliegue: bash (local y en el VPS) no tolera CRLF.
+deploy/release/**/*.sh text eol=lf

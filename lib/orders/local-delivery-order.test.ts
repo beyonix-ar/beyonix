@@ -1123,7 +1123,54 @@ test("email Andreani sin cambios: sigue mostrando el seguimiento", async () => {
     id: 7, estado: "en_camino", cliente_email: "cliente@test.com", cliente_nombre: "Ana",
     shipping_provider: "andreani", tracking_number: "AND-1",
   })
-  assert.match(email.html ?? "", /Seguimiento: AND-1/)
+  assert.match(email.html ?? "", /Seguimiento<\/p>[\s\S]*?>AND-1<\/p>/)
+})
+
+test("email Entregado: layout BEYONIX con número destacado, botón 'Ver mi pedido' y datos escapados", async () => {
+  const previousSite = process.env.NEXT_PUBLIC_SITE_URL
+  process.env.NEXT_PUBLIC_SITE_URL = "https://beyonix.test"
+  try {
+    const email = await captureStateEmail({
+      id: 19, estado: "entregado", cliente_email: "cliente@test.com",
+      cliente_nombre: `Ñandú <script>alert("x")</script>`, shipping_provider: "beyonix",
+    })
+    const html = email.html ?? ""
+    assert.equal(email.subject, "Pedido entregado BX-1019")
+    assert.match(html, /^<!DOCTYPE html>/)
+    assert.match(html, /bgcolor="#112A43"/)
+    assert.match(html, />BEYONIX<\/span>/)
+    assert.match(html, />Pedido entregado<\/h1>/)
+    assert.match(html, />BX-1019<\/p>/)
+    assert.match(html, /Tu pedido BX-1019 fue entregado\./)
+    assert.match(html, /href="https:\/\/beyonix\.test\/cuenta\/compras\/19"[^>]*>Ver mi pedido<\/a>/)
+    assert.match(html, /Hola Ñandú &lt;script&gt;alert\(&quot;x&quot;\)&lt;\/script&gt;,/)
+    assert.doesNotMatch(html, /<script/i)
+    assert.match(html, /Este es un correo automático/)
+  } finally {
+    if (previousSite === undefined) delete process.env.NEXT_PUBLIC_SITE_URL; else process.env.NEXT_PUBLIC_SITE_URL = previousSite
+  }
+})
+
+test("email de estado: sin URL pública configurada sale sin botón; un tracking_url no https nunca se enlaza", async () => {
+  const previousSite = process.env.NEXT_PUBLIC_SITE_URL
+  delete process.env.NEXT_PUBLIC_SITE_URL
+  try {
+    const delivered = await captureStateEmail({ id: 7, estado: "entregado", cliente_email: "cliente@test.com", shipping_provider: "beyonix" })
+    assert.doesNotMatch(delivered.html ?? "", /Ver mi pedido|href=/)
+    assert.match(delivered.html ?? "", /Hola,/)
+    const unsafe = await captureStateEmail({
+      id: 7, estado: "en_camino", cliente_email: "cliente@test.com", shipping_provider: "andreani",
+      tracking_url: "javascript:alert(1)",
+    })
+    assert.doesNotMatch(unsafe.html ?? "", /javascript:|Ver seguimiento/)
+    const safe = await captureStateEmail({
+      id: 7, estado: "en_camino", cliente_email: "cliente@test.com", shipping_provider: "andreani",
+      tracking_url: "https://andreani.test/seguimiento?n=1&x=\"2\"",
+    })
+    assert.match(safe.html ?? "", /href="https:\/\/andreani\.test\/seguimiento\?n=1&amp;x=%222%22"[^>]*>Ver seguimiento<\/a>/)
+  } finally {
+    if (previousSite === undefined) delete process.env.NEXT_PUBLIC_SITE_URL; else process.env.NEXT_PUBLIC_SITE_URL = previousSite
+  }
 })
 
 test("email de pago confirmado: Envío BEYONIX anuncia la preparación sin prometer número de seguimiento", () => {
