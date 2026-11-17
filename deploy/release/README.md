@@ -14,11 +14,14 @@ Desde PowerShell, en la carpeta del repositorio:
 .\deploy-beyonix.ps1 -SoloPreparar   # todo menos activar: prepara y verifica la versión nueva
 .\deploy-beyonix.ps1 -Estado         # versión activa y resultado del último cambio (sólo lectura)
 .\deploy-beyonix.ps1 -Rollback       # vuelve a la versión anterior al último despliegue
+.\deploy-beyonix.ps1 -ValidacionCompleta                # repite lint/typecheck/tests aunque el commit ya esté aprobado
+.\deploy-beyonix.ps1 -SoloPreparar -ValidacionCompleta
 ```
 
 Antes de ejecutar: los cambios tienen que estar commiteados en `main` y pusheados (`git push`).
-Puede tardar más de una hora: la suite completa de tests superó los 27 minutos en esta PC y usa
-varios GB de RAM, así que conviene cerrar otros programas pesados. **No cierres la ventana durante
+La primera vez que se prepara un commit corre la suite completa (~21 min en esta PC, varios GB de
+RAM: conviene cerrar otros programas pesados). Si ese mismo commit ya fue aprobado (por ejemplo,
+`-SoloPreparar` y después el despliegue), las validaciones se reutilizan. **No cierres la ventana durante
 "Actualizando BEYONIX"** (si igual se corta, el VPS termina solo la activación o la reversión).
 
 | Mensaje | Significado |
@@ -33,6 +36,10 @@ varios GB de RAM, así que conviene cerrar otros programas pesados. **No cierres
 | Error: se recuperó la versión anterior. | La versión nueva falló y se volvió sola a la anterior. |
 | ALERTA CRÍTICA … | Ni la versión nueva ni la anterior responden: revisar el VPS YA (`pm2 list`, `pm2 logs beyonix`). |
 | Error: se perdió la conexión … | El VPS sigue solo; consultar el resultado con `-Estado`. |
+
+Al terminar (o al detenerse) muestra el **tiempo de cada etapa**: Git, VPS, variables, migraciones,
+ESLint, TypeScript, tests, entorno, dependencias, `next build`, empaquetado, transferencia, cada paso
+del VPS, activación y verificación. Las mismas mediciones quedan en el log como `tiempo <etapa>=<ms>`.
 
 Cada ejecución deja un log en `Documentos\BEYONIX-backups\deploy-logs\` (credenciales
 enmascaradas) y otro en el VPS en `~/apps/beyonix-releases/.deploy-logs/`.
@@ -51,6 +58,46 @@ enmascaradas) y otro en el VPS en `~/apps/beyonix-releases/.deploy-logs/`.
 - lint, typecheck y la suite completa (`npm test`, máx. 90 min). Si se pasa del tiempo, se termina
   **todo el árbol de procesos** de los tests (cierre normal → forzado, incluidos huérfanos) sin
   tocar procesos ajenos, y el despliegue se detiene.
+
+### Reutilización de validaciones (aprobación por commit)
+
+Si lint, typecheck y tests pasan, se guarda `Documentos\BEYONIX-backups\deploy-approvals\<sha>.aprobacion`
+con la identidad de lo validado:
+- SHA y árbol del commit, y su `package-lock`;
+- dependencias instaladas en el repo (`node_modules/.package-lock.json`);
+- versiones de node y npm, y la plataforma;
+- hash del `.env.local` (nunca su contenido);
+- `NODE_OPTIONS`, `NODE_ENV`, `TZ` y `CI`;
+- la lista de validaciones exigidas.
+
+Una línea `control=` (sha256 del resto) detecta ediciones o archivos truncados.
+
+Se reutiliza **sólo** si el archivo está íntegro, dice `resultado=aprobado` y coincide TODA la
+identidad. Ante cualquier diferencia o duda se valida completo, y el log dice qué cambió.
+- Antes de validar se borra la aprobación del commit.
+- Se escribe sólo si las tres pasan y la identidad no cambió mientras tanto, así que una validación
+  fallida o interrumpida nunca deja aprobación.
+- `-ValidacionCompleta` ignora la aprobación existente.
+- La reutilización queda registrada en el log.
+
+Siempre se ejecutan: `next build`, migraciones, variables, humo en el VPS y los controles de activación.
+
+### Entorno de compilación
+
+`next build` corre en `Documentos\BEYONIX-backups\build-env\work`. Es exclusivo de los despliegues:
+tiene su propio bloqueo, y uno abandonado por un cierre forzado se recupera. En cada compilación:
+
+1. Se borra todo menos `node_modules` (y su `.cache`): no quedan fuentes, `.next` ni `.env.local` previos.
+2. Se extrae el árbol exacto del commit (`git archive`).
+3. Dependencias: se reutilizan si `deps.stamp` coincide con el `package-lock` **del commit**, node,
+   npm y plataforma, y la huella de `node_modules` (rutas y tamaños) no cambió. Si no, se corre
+   `npm ci` limpio desde ese lock (máx. 30 min). El sello se borra antes y se escribe sólo si termina bien.
+4. `.env.local` se copia sólo durante el build y se borra siempre, también si se interrumpe. Se
+   rechaza un `.next` que contenga archivos `.env`.
+5. Se empaqueta `.next` con su manifest y se vuelve a limpiar el entorno.
+
+El build ya no usa las dependencias del repo de trabajo. Para forzar una reinstalación, borrar
+`build-env\deps.stamp`.
 
 ## Activación (todo bajo un bloqueo en el VPS)
 
@@ -108,7 +155,7 @@ manualmente releases viejas de `~/apps/beyonix-releases/` (nunca la activa ni la
 ## Pruebas de los scripts
 
 ```bash
-bash deploy/release/tests/run-local-tests.sh       # PC: argumentos, migraciones, timeout, bloqueo, red
+bash deploy/release/tests/run-local-tests.sh       # PC: argumentos, migraciones, timeout, bloqueo, red, entorno, aprobaciones
 # VPS, en un sandbox aislado de /tmp (pm2 y curl falsos; no toca la tienda ni el PM2 real):
 tar -C deploy/release -c remote-lib.sh remote-switch.sh remote-rollback.sh remote-status.sh remote-assemble.sh tests/run-vps-sandbox-tests.sh \
   | ssh -i ~/.ssh/beyonix_donweb_trabajo -o IdentitiesOnly=yes -p 5799 beyonix@168.181.186.203 \
@@ -123,7 +170,7 @@ tar -C deploy/release -c remote-lib.sh remote-switch.sh remote-rollback.sh remot
 | `deploy.sh` | PC | Orquesta los pasos, los controles y el log. |
 | `lib.sh` | PC | Validación de argumentos, migraciones, timeout con árbol de procesos, espera ante cortes. |
 | `kill-process-tree.ps1` | PC | Termina el árbol de procesos de los tests (sólo esa ejecución). |
-| `local-build.sh` | PC | Compila el commit en un directorio limpio y empaqueta `.next`. |
+| `local-build.sh` | PC | Compila el commit en el entorno persistente (dependencias reutilizadas o `npm ci`) y empaqueta `.next`. |
 | `remote-lib.sh` | VPS | Base común: PM2, salud, enlace, bloqueo, validación de releases. |
 | `remote-status.sh` | VPS | Estado de producción (sólo lectura). |
 | `remote-assemble.sh` | VPS | Arma la release nueva (npm ci con memoria limitada) y la prueba en el 3001. |

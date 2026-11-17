@@ -5,6 +5,9 @@
 # Última línea si todo pasa: LISTO release=<ruta> build_id=<id>
 
 first() { sed -n 1p; }
+# Tiempos por etapa ("tiempo <clave>=<ms>"): sólo informativos, no cambian ninguna decisión.
+T_LAP="$(date +%s%3N)"
+lap() { local now; now="$(date +%s%3N)"; say "tiempo $1=$((now - T_LAP))"; T_LAP="$now"; }
 
 # npm ci aislado en un scope de systemd con memoria máxima: si la supera, el kernel mata sólo a
 # npm (nunca a PM2, que está en otro cgroup) y la preparación se detiene.
@@ -38,6 +41,7 @@ main() {
   [ "$outside" = 0 ] || stop "el tar contiene rutas fuera de .next"
   [ "$(df --output=avail -m "$APPS" | tail -1 | tr -d ' ')" -ge 3000 ] || stop "menos de 3 GB libres en el VPS"
   say "artefacto=OK build_esperado=$expected_build"
+  lap vps_artefacto
 
   # 2. Release nueva (nunca reutiliza ni pisa un directorio existente).
   rel="$REL_ROOT/${sha:0:7}-$(date +%Y%m%d-%H%M%S)"
@@ -46,6 +50,7 @@ main() {
   git clone --quiet --no-checkout "$(git -C "$active" remote get-url origin)" "$rel" || stop "git clone falló"
   git -C "$rel" checkout --quiet --detach "$sha" || stop "checkout falló"
   [ "$(git -C "$rel" rev-parse HEAD)" = "$sha" ] || stop "checkout no coincide"
+  lap vps_codigo
 
   # Dependencias Linux: mismo lock que la activa => copia (probado); lock distinto => npm ci limitado.
   if cmp -s "$active/package-lock.json" "$rel/package-lock.json"; then
@@ -57,6 +62,7 @@ main() {
   fi
   ln -s "$ENV_FILE" "$rel/.env.local" || stop "no se pudo enlazar .env.local"
   [ -r "$rel/.env.local" ] || stop ".env.local no legible por enlace"
+  lap vps_dependencias
 
   # 3. Extraer el build y verificar archivo por archivo; el manifest queda en la release para
   #    poder validarla en un rollback futuro.
@@ -70,6 +76,7 @@ main() {
   [ "$win_refs" = 0 ] || stop "runtime con $win_refs archivos con referencias Windows"
   (cd "$rel" && node -e 'require("sharp")') || stop "sharp (Linux) no carga"
   say "integridad=OK"
+  lap vps_extraccion
 
   # 4. La versión activa sigue intacta.
   [ "$(readlink -f "$CURRENT")" = "$active" ] || stop "el enlace activo cambió durante el armado"
@@ -124,6 +131,7 @@ main() {
   trap - EXIT
   rm -f "$home_html"
   [ "$mismatch" = 0 ] || stop "$mismatch diferencias/errores en el humo (ver arriba)"
+  lap vps_humo
 
   {
     echo "sha=$sha"

@@ -4,6 +4,7 @@
 #   bash deploy.sh --solo-preparar      todo menos la activación (no reinicia nada)
 #   bash deploy.sh --rollback [release] vuelve a la versión anterior ya compilada
 #   bash deploy.sh --estado             muestra la versión activa y el último cambio (sólo lectura)
+#   --validacion-completa (con despliegue o --solo-preparar): ignora aprobaciones previas del commit
 # Nunca aplica migraciones, nunca toca variables de entorno, la base de datos ni los timers.
 # En consola sólo muestra pasos simples; el detalle completo queda en el log.
 set -uo pipefail
@@ -14,17 +15,23 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 MODE=desplegar
 ROLLBACK_TARGET=-
+FORCE_VALIDATION=0
+usage() { echo "uso: deploy.sh [--solo-preparar] [--validacion-completa] | --estado | --rollback [release]"; exit 2; }
+if [ "${1:-}" = --validacion-completa ]; then FORCE_VALIDATION=1; shift; fi
 case "${1:-}" in
   "") ;;
-  --solo-preparar) MODE=preparar ;;
-  --estado) MODE=estado ;;
+  --solo-preparar) MODE=preparar
+    [ "${2:-}" = --validacion-completa ] && { FORCE_VALIDATION=1; shift; }
+    [ $# -le 1 ] || usage ;;
+  --estado) MODE=estado; [ $# = 1 ] && [ "$FORCE_VALIDATION" = 0 ] || usage ;;
   --rollback)
     MODE=rollback
+    [ $# -le 2 ] && [ "$FORCE_VALIDATION" = 0 ] || usage
     if [ -n "${2:-}" ]; then
       ROLLBACK_TARGET="$(normalize_release_arg "$2")" \
         || { echo "Error: versión inválida. Usá el nombre de una release (p. ej. ac1fe04-20261116-132041)."; exit 2; }
     fi ;;
-  *) echo "uso: deploy.sh [--solo-preparar | --estado | --rollback [release]]"; exit 2 ;;
+  *) usage ;;
 esac
 
 # BEYONIX_DEPLOY_REPO sólo para probar estos scripts contra otro checkout (p. ej. un worktree limpio).
@@ -32,6 +39,8 @@ REPO="${BEYONIX_DEPLOY_REPO:-$(git -C "$HERE" rev-parse --show-toplevel)}"
 BASE="$(cygpath -u "$USERPROFILE")/Documents/BEYONIX-backups"
 LOG_DIR="$BASE/deploy-logs"
 BUILD_DIR="$BASE/builds"
+BUILD_ENV="$BASE/build-env"
+APPROVALS="$BASE/deploy-approvals"
 SITE=https://beyonix.com.ar
 CURRENT=/home/beyonix/apps/beyonix-current
 SSH_OPTS=(-i "$HOME/.ssh/beyonix_donweb_trabajo" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
@@ -57,7 +66,35 @@ redact_log() {
     -e 's/((APP_USR|TEST)-[0-9]{4})[A-Za-z0-9-]+/\1***/g' \
     "$LOG" 2>/dev/null || true
 }
+# Tiempos por etapa: "tiempo <clave>=<ms>" en el log y resumen al terminar (también si se detiene).
+T_START=$(now_ms)
+T_STAGE=$T_START
+TIMES=()
+add_time() { TIMES+=("$1 $2"); log "tiempo $1=$2"; }
+t_begin() { T_STAGE=$(now_ms); }
+t_end() { add_time "$1" $(( $(now_ms) - T_STAGE )); T_STAGE=$(now_ms); }
+add_times_from() { # las líneas "tiempo <clave>=<ms>" que emiten local-build.sh y remote-assemble.sh
+  local k v
+  while read -r k v; do add_time "$k" "$v"; done < <(sed -nE 's/^tiempo ([a-z_]+)=([0-9]+)$/\1 \2/p' <<< "$1")
+}
+print_times() {
+  local e k v line
+  [ ${#TIMES[@]} -gt 0 ] || return 0
+  echo "Tiempos:"
+  for e in "${TIMES[@]}"; do
+    k="${e% *}"; v="${e##* }"
+    if [ "$k" = validaciones_reutilizadas ]; then
+      line="$(printf '  %-42s %s' "ESLint + TypeScript + Tests" "reutilizados (aprobación previa)")"
+    else
+      line="$(printf '  %-42s %10s' "$(stage_label "$k")" "$(fmt_ms "$v")")"
+    fi
+    echo "$line"; log "$line"
+  done
+  line="$(printf '  %-42s %10s' "Total" "$(fmt_ms $(( $(now_ms) - T_START )))")"
+  echo "$line"; log "$line"
+}
 finish() {
+  print_times
   rmdir "$LOCK" 2>/dev/null || true
   redact_log
 }
@@ -130,6 +167,7 @@ fi
 
 # ───────────────────────── 1. Preparación ─────────────────────────
 say "Preparando actualización."
+t_begin
 
 run git -C "$REPO" fetch --quiet origin main || abort "no se pudo consultar GitHub (origin/main)"
 BRANCH="$(git -C "$REPO" symbolic-ref -q --short HEAD || echo "(sin rama)")"
@@ -144,6 +182,7 @@ is_sha "$SHA" || abort "no se pudo leer el commit actual"
 [ "$SHA" = "$(git -C "$REPO" rev-parse origin/main)" ] \
   || abort "el código local ($(git -C "$REPO" rev-parse --short HEAD)) no coincide con GitHub origin/main ($(git -C "$REPO" rev-parse --short origin/main)); hacé push o pull primero"
 log "commit=$SHA ($(git -C "$REPO" log -1 --format=%s "$SHA"))"
+t_end git
 
 remote remote-status.sh || abort "no se pudo leer el estado del VPS"
 STATUS="$OUT"
@@ -163,11 +202,13 @@ if [ "$(kv active_sha "$STATUS")" = "$SHA" ]; then
   fi
   log "AVISO: el commit ya está activo; se prepara igual (--solo-preparar)"
 fi
+t_end vps
 
 public_hash() { grep -E '^NEXT_PUBLIC_[A-Z0-9_]*=' "$1" | tr -d '\r' | sed -E 's/[[:space:]]+$//' | LC_ALL=C sort | sha256sum | cut -c1-16; }
 [ -f "$REPO/.env.local" ] || abort "falta .env.local en el repositorio local"
 [ "$(public_hash "$REPO/.env.local")" = "$(kv public_env_hash "$STATUS")" ] \
   || abort "las variables públicas (NEXT_PUBLIC_*) del .env.local local no coinciden con las de producción"
+t_end variables
 
 # Migraciones: sólo lectura. Formato pedido explícitamente (--agent no -o json) y validado.
 MIG_TMP="$(mktemp -d)"
@@ -189,22 +230,63 @@ log "migraciones remotas=$(wc -l <<< "$remote_versions") locales=$(wc -l <<< "$l
 [ -z "$pending" ] || abort "hay migraciones pendientes de aplicar en producción: $pending. Aplicalas manualmente (con backup) y volvé a ejecutar"
 [ -z "$unknown" ] || abort "producción tiene migraciones que este commit no conoce: $unknown"
 log "preparación OK commit=$SHA activa=$ACTIVE build_activo=$ACTIVE_BUILD"
+t_end migraciones
 
 # ───────────────────────── 2. Compilación ─────────────────────────
 say "Compilando."
-( cd "$REPO" && run timeout 900 npm run lint ) || abort "lint con errores"
-( cd "$REPO" && run timeout 900 npm run typecheck ) || abort "typecheck con errores"
-log "\$ npm test (máx. 90 min, con limpieza del árbol de procesos)"
-( cd "$REPO" && run_with_tree_timeout 5400 "$LOG" npm test )
-case $? in
-  0) ;;
-  124) abort "los tests superaron 90 minutos (se terminaron todos sus procesos)" ;;
-  125) abort "los tests superaron 90 minutos y quedaron procesos sin terminar (ver log)" ;;
-  *) abort "fallaron tests" ;;
-esac
-run bash "$HERE/local-build.sh" "$SHA" "$REPO" "$BUILD_DIR" || abort "el build falló"
-ARTIFACT="$(sed -n 's/^LISTO artefacto=\([^ ]*\) .*/\1/p' "$LOG" | sed -n '$p')"
-NEW_BUILD="$(sed -n 's/^LISTO artefacto=.* build_id=//p' "$LOG" | sed -n '$p')"
+# Validaciones (lint + typecheck + tests): se reutiliza la aprobación de ESTE commit sólo si coincide
+# toda su identidad (árbol, dependencias, herramientas, .env.local, entorno). Ante cualquier duda, completas.
+IDENTITY="$(approval_identity "$REPO" "$SHA" 2>>"$LOG")" || IDENTITY=""
+APPROVAL_FILE="$(approval_file "$APPROVALS" "$SHA")"
+REUSED=0
+if [ "$FORCE_VALIDATION" = 1 ]; then
+  log "aprobación: validación completa forzada (--validacion-completa)"
+elif [ -z "$IDENTITY" ]; then
+  log "aprobación: identidad indeterminada => validación completa"
+elif reason="$(approval_check "$APPROVALS" "$SHA" "$IDENTITY")"; then
+  REUSED=1
+  log "aprobación REUTILIZADA: $APPROVAL_FILE (aprobada el $(sed -n 's/^aprobado_en=//p' "$APPROVAL_FILE"); log de esa validación: $(sed -n 's/^log=//p' "$APPROVAL_FILE"))"
+else
+  log "aprobación: no reutilizable ($reason) => validación completa"
+fi
+t_end aprobacion
+if [ "$REUSED" = 1 ]; then
+  echo "Validaciones: se reutiliza la aprobación previa de este mismo commit (para repetirlas: -ValidacionCompleta)."
+  add_time validaciones_reutilizadas 0
+else
+  # Primero se invalida: una validación interrumpida o fallida nunca deja una aprobación utilizable.
+  approval_revoke "$APPROVALS" "$SHA" || abort "no se pudo invalidar la aprobación anterior"
+  ( cd "$REPO" && run timeout 900 npm run lint ) || abort "lint con errores"
+  t_end lint
+  ( cd "$REPO" && run timeout 900 npm run typecheck ) || abort "typecheck con errores"
+  t_end typecheck
+  log "\$ npm test (máx. 90 min, con limpieza del árbol de procesos)"
+  ( cd "$REPO" && run_with_tree_timeout 5400 "$LOG" npm test )
+  case $? in
+    0) ;;
+    124) abort "los tests superaron 90 minutos (se terminaron todos sus procesos)" ;;
+    125) abort "los tests superaron 90 minutos y quedaron procesos sin terminar (ver log)" ;;
+    *) abort "fallaron tests" ;;
+  esac
+  t_end tests
+  # Se aprueba sólo si la identidad no cambió mientras se validaba (p. ej. un npm install en paralelo).
+  if [ -n "$IDENTITY" ] && [ "$(approval_identity "$REPO" "$SHA" 2>/dev/null)" = "$IDENTITY" ]; then
+    if approval_save "$APPROVALS" "$SHA" "$IDENTITY" "$(winlog)"; then log "aprobación guardada: $APPROVAL_FILE"
+    else log "AVISO: no se pudo guardar la aprobación (el próximo despliegue validará completo)"; fi
+  else
+    log "AVISO: la identidad cambió durante la validación; no se guarda aprobación"
+  fi
+fi
+
+log "\$ local-build.sh $SHA (entorno $BUILD_ENV)"
+BUILD_OUT="$(bash "$HERE/local-build.sh" "$SHA" "$REPO" "$BUILD_DIR" "$BUILD_ENV" 2>&1)"
+BUILD_RC=$?
+printf '%s\n' "$BUILD_OUT" >> "$LOG"
+add_times_from "$BUILD_OUT"
+t_begin
+[ "$BUILD_RC" = 0 ] || abort "el build falló ($(grep -E '^DETENER' <<< "$BUILD_OUT" | sed -n 1p))"
+ARTIFACT="$(sed -n 's/^LISTO artefacto=\([^ ]*\) .*/\1/p' <<< "$BUILD_OUT" | sed -n '$p')"
+NEW_BUILD="$(sed -n 's/^LISTO artefacto=.* build_id=//p' <<< "$BUILD_OUT" | sed -n '$p')"
 [ -d "$ARTIFACT" ] && [ -n "$NEW_BUILD" ] || abort "no se encontró el artefacto del build"
 
 # ───────────────────────── 3. Transferencia ─────────────────────────
@@ -214,10 +296,15 @@ is_incoming_path "$INCOMING" || abort "ruta de recepción inválida"
 run "${SSH[@]}" "mkdir -m 700 $INCOMING" || abort "no se pudo crear el directorio de recepción en el VPS"
 run "${SCP[@]}" "$ARTIFACT/next-build.tar.gz" "$ARTIFACT/next-files.sha256" "$ARTIFACT/meta.env" "$ARTIFACT/SHA256SUMS" "$VPS:$INCOMING/" \
   || abort "falló la transferencia al VPS"
+t_end transferencia
 
 # ───────────────────────── 4. Verificación ─────────────────────────
 say "Verificando."
-remote remote-assemble.sh "$SHA" "$INCOMING" || abort "la versión nueva no pasó la verificación en el VPS ($(first_stop))"
+remote remote-assemble.sh "$SHA" "$INCOMING"
+ASSEMBLE_RC=$?
+add_times_from "$OUT"
+t_begin
+[ "$ASSEMBLE_RC" = 0 ] || abort "la versión nueva no pasó la verificación en el VPS ($(first_stop))"
 RELEASE="$(sed -n 's/^LISTO release=\([^ ]*\) .*/\1/p' <<< "$OUT")"
 is_release_path "$RELEASE" || abort "el VPS informó una release inválida"
 [ "$(sed -n 's/^LISTO release=.* build_id=//p' <<< "$OUT")" = "$NEW_BUILD" ] || abort "la release armada no corresponde al build compilado"
@@ -231,17 +318,20 @@ fi
 
 # ───────────────────────── 5. Activación ─────────────────────────
 say "Actualizando BEYONIX."
+t_begin
 # Fuera de los disparos de los timers (segundo 0 de cada minuto; minutos múltiplos de 5).
 for _ in $(seq 1 400); do
   s=$((10#$(date +%S))); m=$((10#$(date +%M) % 5))
   [ "$s" -ge 20 ] && [ "$s" -le 40 ] && [ "$m" != 0 ] && [ "$m" != 4 ] && break
   sleep 1
 done
+t_end ventana
 
 # El VPS bloquea, comprueba que la activa siga siendo $ACTIVE, activa, verifica estabilidad y,
 # si algo falla, vuelve solo a la anterior; todo bajo el mismo bloqueo.
 remote remote-switch.sh "$RELEASE" "$ACTIVE" "$DEPLOY_ID"
 SWITCH_RC=$?
+t_end activacion
 if [ "$SWITCH_RC" = 255 ]; then
   log "conexión perdida durante la activación; consultando el resultado"
   case "$(await_switch_result "$DEPLOY_ID" 40 15)" in
@@ -276,6 +366,7 @@ for p in / /productos /login; do
   log "público $p=$code"
   [ "$code" = 200 ] || pub=0
 done
+t_end verificacion
 if [ "$pub" != 1 ]; then
   log "ROLLBACK AUTOMÁTICO: la verificación desde la PC falló"
   remote remote-rollback.sh "$DEPLOY_ID" "$RELEASE" "$ACTIVE"
