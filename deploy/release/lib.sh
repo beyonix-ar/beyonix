@@ -165,16 +165,36 @@ stage_label() {
   esac
 }
 
-# ── Aprobación de validaciones (lint + typecheck + tests) por commit ──────────
-# Se reutiliza sólo si TODA la identidad coincide; cualquier duda => validación completa.
-APPROVAL_SCHEMA=2
-VALIDATION_SPEC='lint=npm run lint|typecheck=npm run typecheck|tests=npm test'
+# ── Validaciones y su aprobación por commit ────────────────────────────────────
+# Dos niveles, nunca intercambiables:
+#   estandar  lint + typecheck (deploy normal; npm test NO se ejecuta)
+#   completa  lint + typecheck + npm test (sólo con --validacion-completa)
+# Cada nivel tiene su propio archivo de aprobación y su lista de validaciones dentro de la identidad.
+# Se reutiliza sólo si TODA la identidad coincide; cualquier duda => se valida de nuevo.
+APPROVAL_SCHEMA=3
+VALIDATION_SPEC='lint=npm run lint|typecheck=npm run typecheck'
+VALIDATION_SPEC_FULL='lint=npm run lint|typecheck=npm run typecheck|tests=npm test'
 sha256_of() { sha256sum | cut -d' ' -f1; }
+is_validation_level() { [ "$1" = estandar ] || [ "$1" = completa ]; }
+validation_spec() { # <nivel>
+  case "$1" in
+    estandar) printf '%s\n' "$VALIDATION_SPEC" ;;
+    completa) printf '%s\n' "$VALIDATION_SPEC_FULL" ;;
+    *) return 1 ;;
+  esac
+}
+validation_description() { # <nivel>
+  case "$1" in
+    estandar) echo "estándar: ESLint + TypeScript (npm test NO ejecutado)" ;;
+    completa) echo "completa: ESLint + TypeScript + npm test" ;;
+    *) return 1 ;;
+  esac
+}
 
-# approval_identity <repo> <sha>: líneas clave=valor que determinan el resultado de las validaciones.
-# Los secretos sólo intervienen como hash. Falla si algún dato no se puede determinar.
-# dependencias_contenido ata la aprobación al contenido real de node_modules con el que se validó.
-approval_identity() {
+# approval_base_identity <repo> <sha>: líneas clave=valor comunes a ambos niveles (la parte costosa:
+# incluye la huella por contenido de node_modules). Los secretos sólo intervienen como hash. Falla si
+# algún dato no se puede determinar. dependencias_contenido ata la aprobación al node_modules validado.
+approval_base_identity() {
   local repo="$1" sha="$2" tree lock deps deps_content env_local node_v npm_v
   is_sha "$sha" || return 1
   node_v="$(node -v 2>/dev/null)" && [ -n "$node_v" ] || return 1
@@ -198,16 +218,34 @@ approval_identity() {
   printf 'plataforma=%s\n' "$(uname -sm)"
   printf 'env_local=%s\n' "$env_local"
   printf 'entorno_proceso=%s\n' "$(printf '%s|' "${NODE_OPTIONS:-}" "${NODE_ENV:-}" "${TZ:-}" "${CI:-}" | sha256_of)"
-  printf 'validaciones=%s\n' "$(printf '%s' "$VALIDATION_SPEC" | sha256_of)"
 }
 
-approval_file() { printf '%s/%s.aprobacion\n' "$1" "$2"; } # <dir> <sha>
+# approval_with_level <identidad-base> <nivel>: agrega el nivel y la lista exacta de validaciones.
+approval_with_level() {
+  local spec
+  [ -n "$1" ] || return 1
+  spec="$(validation_spec "$2")" || return 1
+  printf '%s\nnivel=%s\nvalidaciones=%s\n' "$1" "$2" "$(printf '%s' "$spec" | sha256_of)"
+}
 
-# approval_check <dir> <sha> <identidad>: 0 si hay una aprobación íntegra con la MISMA identidad.
-# Si no, imprime el motivo (sin valores) y devuelve 1.
+# approval_identity <repo> <sha> [nivel=estandar]: identidad completa de un nivel.
+approval_identity() {
+  local base level="${3:-estandar}"
+  is_validation_level "$level" || return 1
+  base="$(approval_base_identity "$1" "$2")" || return 1
+  approval_with_level "$base" "$level"
+}
+
+approval_file() { # <dir> <sha> [nivel=estandar]
+  is_validation_level "${3:-estandar}" || return 1
+  printf '%s/%s.%s.aprobacion\n' "$1" "$2" "${3:-estandar}"
+}
+
+# approval_check <dir> <sha> <identidad> [nivel=estandar]: 0 si hay una aprobación íntegra de ESE nivel
+# con la MISMA identidad. Si no, imprime el motivo (sin valores) y devuelve 1.
 approval_check() {
-  local f body control want key
-  f="$(approval_file "$1" "$2")"
+  local f body control want key level="${4:-estandar}"
+  f="$(approval_file "$1" "$2" "$level")" || { echo "nivel de validación inválido"; return 1; }
   [ -f "$f" ] || { echo "sin aprobación previa para este commit"; return 1; }
   body="$(sed '$d' "$f")"
   control="$(sed -n '$s/^control=//p' "$f")"
@@ -216,6 +254,8 @@ approval_check() {
   [ "$(sed -n 's/^resultado=//p' <<< "$body")" = aprobado ] || { echo "aprobación sin resultado aprobado"; return 1; }
   want="$3"
   [ -n "$want" ] || { echo "identidad actual indeterminada"; return 1; }
+  [ "$(grep -c '^nivel=' <<< "$want")" = 1 ] && [ "$(sed -n 's/^nivel=//p' <<< "$want")" = "$level" ] \
+    || { echo "identidad de otro nivel de validación"; return 1; }
   while IFS= read -r key; do
     key="${key%%=*}"
     [ "$(grep -c "^$key=" <<< "$body")" = 1 ] \
@@ -225,19 +265,95 @@ approval_check() {
   return 0
 }
 
-# approval_revoke <dir> <sha>: se llama ANTES de validar; una validación interrumpida o fallida no deja aprobación.
-approval_revoke() { rm -f -- "$(approval_file "$1" "$2")"; }
+# approval_pick <dir> <sha> <identidad-base>: para un deploy ESTÁNDAR imprime el nivel de una aprobación
+# reutilizable (prefiere completa, que también cubre lint y typecheck). Sin ninguna válida, imprime los
+# motivos en stderr y devuelve 1. Un deploy con --validacion-completa nunca reutiliza: valida siempre.
+approval_pick() {
+  local level reason
+  [ -n "$3" ] || { echo "identidad actual indeterminada" >&2; return 1; }
+  for level in completa estandar; do
+    if reason="$(approval_check "$1" "$2" "$(approval_with_level "$3" "$level")" "$level")"; then
+      printf '%s\n' "$level"; return 0
+    fi
+    echo "$level: $reason" >&2
+  done
+  return 1
+}
 
-# approval_save <dir> <sha> <identidad> <log>: sólo tras pasar las tres validaciones. Escritura atómica.
+# approval_revoke <dir> <sha> [nivel=estandar]: se llama ANTES de validar; una validación interrumpida
+# o fallida no deja aprobación de ese nivel.
+approval_revoke() { local f; f="$(approval_file "$1" "$2" "${3:-estandar}")" || return 1; rm -f -- "$f"; }
+
+# approval_revoke_all <dir> <sha>: antes de CUALQUIER validación se invalidan todos los niveles (todos
+# dependen de lint y typecheck): un fallo o una interrupción no deja ninguno reutilizable.
+approval_revoke_all() { approval_revoke "$1" "$2" estandar && approval_revoke "$1" "$2" completa; }
+
+# validation_passed_level <nivel> <rc-de-validate_commit>: 0 si esa ejecución demostró el nivel.
+# Estándar: lint y typecheck pasaron (rc 0, o 12/124/125 = sólo fallaron o se cortaron los tests).
+# Completa: rc 0 (sólo existe si se ejecutó npm test y pasó).
+validation_passed_level() {
+  case "$1:$2" in
+    estandar:0|estandar:12|estandar:124|estandar:125|completa:0) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# approval_record <dir> <sha> <nivel-ejecutado> <rc> <identidad-base-antes> <identidad-base-después> <log>:
+# guarda sólo los niveles que ESTA ejecución demostró, y sólo si la identidad no cambió mientras se
+# validaba. Imprime los niveles guardados; devuelve 1 si no guardó ninguno.
+approval_record() {
+  local dir="$1" sha="$2" ran="$3" rc="$4" before="$5" after="$6" logref="$7" level saved=""
+  is_validation_level "$ran" || return 1
+  [ -n "$before" ] && [ "$before" = "$after" ] || return 1
+  for level in estandar completa; do
+    [ "$level" = completa ] && [ "$ran" != completa ] && continue
+    validation_passed_level "$level" "$rc" || continue
+    approval_save "$dir" "$sha" "$(approval_with_level "$before" "$level")" "$logref" "$level" || return 1
+    saved+="$level"$'\n'
+  done
+  [ -n "$saved" ] || return 1
+  printf '%s' "$saved"
+}
+
+# approval_save <dir> <sha> <identidad> <log> [nivel=estandar]: sólo tras pasar TODAS las validaciones
+# del nivel. Escritura atómica; la identidad debe ser del mismo nivel que el archivo.
 approval_save() {
-  local f tmp body
+  local f tmp body level="${5:-estandar}"
+  [ "$(sed -n 's/^nivel=//p' <<< "$3")" = "$level" ] || return 1
   mkdir -p "$1" || return 1
-  f="$(approval_file "$1" "$2")"
+  f="$(approval_file "$1" "$2" "$level")" || return 1
   # Temporal único por escritura ($$ es el mismo en subshells concurrentes).
   tmp="$(mktemp "$f.tmp.XXXXXX")" || return 1
   body="$(printf '%s\nresultado=aprobado\naprobado_en=%s\nlog=%s' "$3" "$(date -Is)" "$4")"
   { printf '%s\n' "$body"; printf 'control=%s\n' "$(printf '%s\n' "$body" | sha256_of)"; } > "$tmp" && mv -f -- "$tmp" "$f" \
     || { rm -f -- "$tmp"; return 1; }
+}
+
+# validate_commit <repo> <nivel> <log>: corre las validaciones del nivel con su salida al log e imprime
+# "tiempo <etapa>=<ms>" por etapa. npm test SÓLO en nivel completa (máx. 90 min, con limpieza del árbol
+# de procesos). Devuelve 0; 10 lint, 11 typecheck, 12 tests fallidos; 124/125 timeout de tests;
+# 2 nivel inválido.
+validate_commit() {
+  local repo="$1" level="$2" log="$3" t rc
+  is_validation_level "$level" || return 2
+  t=$(now_ms)
+  echo "\$ npm run lint" >> "$log"
+  (cd "$repo" && timeout 900 npm run lint) >> "$log" 2>&1 || return 10
+  echo "tiempo lint=$(( $(now_ms) - t ))"; t=$(now_ms)
+  echo "\$ npm run typecheck" >> "$log"
+  (cd "$repo" && timeout 900 npm run typecheck) >> "$log" 2>&1 || return 11
+  echo "tiempo typecheck=$(( $(now_ms) - t ))"; t=$(now_ms)
+  if [ "$level" != completa ]; then
+    echo "npm test omitido (validación estándar)" >> "$log"
+    return 0
+  fi
+  echo "\$ npm test (máx. 90 min, con limpieza del árbol de procesos)" >> "$log"
+  (cd "$repo" && run_with_tree_timeout 5400 "$log" npm test); rc=$?
+  case $rc in
+    0) echo "tiempo tests=$(( $(now_ms) - t ))" ;;
+    124|125) return "$rc" ;;
+    *) return 12 ;;
+  esac
 }
 
 # ── Integridad de dependencias instaladas ──────────────────────────────────────

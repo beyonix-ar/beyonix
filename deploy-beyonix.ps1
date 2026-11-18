@@ -7,11 +7,11 @@
   Documentos\BEYONIX-backups\deploy-logs. Ver deploy/release/README.md.
 
 .EXAMPLE
-  .\deploy-beyonix.ps1                  # actualización completa
+  .\deploy-beyonix.ps1                  # actualización con validación estándar (ESLint + TypeScript, sin npm test)
   .\deploy-beyonix.ps1 -SoloPreparar    # prepara y verifica la versión nueva sin activarla
   .\deploy-beyonix.ps1 -Rollback        # vuelve a la versión anterior al último despliegue
   .\deploy-beyonix.ps1 -Estado          # versión activa y resultado del último cambio (sólo lectura)
-  .\deploy-beyonix.ps1 -ValidacionCompleta   # repite lint/typecheck/tests aunque el commit ya esté aprobado
+  .\deploy-beyonix.ps1 -ValidacionCompleta   # además ejecuta npm test completo (siempre, sin reutilizar aprobaciones)
   (también combinable: -SoloPreparar -ValidacionCompleta)
 #>
 [CmdletBinding(DefaultParameterSetName = 'Desplegar')]

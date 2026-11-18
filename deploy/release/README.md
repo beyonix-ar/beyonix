@@ -10,24 +10,27 @@ moviendo el enlace `~/apps/beyonix-current` y reiniciando PM2 (corte de menos de
 Desde PowerShell, en la carpeta del repositorio:
 
 ```powershell
-.\deploy-beyonix.ps1                 # actualización completa
+.\deploy-beyonix.ps1                 # actualización (validación estándar: ESLint + TypeScript, sin npm test)
 .\deploy-beyonix.ps1 -SoloPreparar   # todo menos activar: prepara y verifica la versión nueva
 .\deploy-beyonix.ps1 -Estado         # versión activa y resultado del último cambio (sólo lectura)
 .\deploy-beyonix.ps1 -Rollback       # vuelve a la versión anterior al último despliegue
-.\deploy-beyonix.ps1 -ValidacionCompleta                # repite lint/typecheck/tests aunque el commit ya esté aprobado
+.\deploy-beyonix.ps1 -ValidacionCompleta                # además ejecuta npm test completo (siempre)
 .\deploy-beyonix.ps1 -SoloPreparar -ValidacionCompleta
 ```
 
 Antes de ejecutar: los cambios tienen que estar commiteados en `main` y pusheados (`git push`).
-La primera vez que se prepara un commit corre la suite completa (~21 min en esta PC, varios GB de
-RAM: conviene cerrar otros programas pesados). Si ese mismo commit ya fue aprobado (por ejemplo,
-`-SoloPreparar` y después el despliegue), las validaciones se reutilizan. **No cierres la ventana durante
+El deploy normal **no ejecuta `npm test`**: valida con ESLint y TypeScript y siempre compila con
+`next build`. Para correr además la suite completa (~21 min en esta PC, varios GB de RAM: conviene
+cerrar otros programas pesados) usar `-ValidacionCompleta`. Si ese mismo commit ya fue aprobado (por
+ejemplo, `-SoloPreparar` y después el despliegue), las validaciones estándar se reutilizan. Al terminar,
+la consola indica qué validación se hizo (`Validación: estándar ... (npm test NO ejecutado)` o
+`completa ... + npm test`), y el resumen de tiempos muestra `Tests  NO ejecutados` cuando corresponde. **No cierres la ventana durante
 "Actualizando BEYONIX"** (si igual se corta, el VPS termina solo la activación o la reversión).
 
 | Mensaje | Significado |
 |---|---|
 | Preparando actualización. | Controles previos (Git, VPS, variables públicas, migraciones). |
-| Compilando. | lint, typecheck, `npm test` y `next build` en un directorio limpio. |
+| Compilando. | lint, typecheck (y `npm test` sólo con `-ValidacionCompleta`) y `next build` en un directorio limpio. |
 | Transfiriendo. | Copia del build al VPS por SSH. |
 | Verificando. | Arma la release nueva y la prueba en `127.0.0.1:3001` sin tocar la tienda. |
 | Actualizando BEYONIX. | Activa la versión nueva y la verifica. |
@@ -55,33 +58,41 @@ enmascaradas) y otro en el VPS en `~/apps/beyonix-releases/.deploy-logs/`.
   JSON válido. Si la respuesta no tiene ese formato, si el commit trae migraciones que producción no
   tiene, o si producción tiene migraciones que el commit no conoce, se detiene. **Nunca aplica
   migraciones**: aplicarlas manualmente (con backup) y volver a ejecutar.
-- lint, typecheck y la suite completa (`npm test`, máx. 90 min). Si se pasa del tiempo, se termina
+- lint y typecheck; con `-ValidacionCompleta`, además la suite completa (`npm test`, máx. 90 min). Si se pasa del tiempo, se termina
   **todo el árbol de procesos** de los tests (cierre normal → forzado, incluidos huérfanos) sin
   tocar procesos ajenos, y el despliegue se detiene.
 
 ### Reutilización de validaciones (aprobación por commit)
 
-Si lint, typecheck y tests pasan, se guarda `Documentos\BEYONIX-backups\deploy-approvals\<sha>.aprobacion`
-con la identidad de lo validado:
+Hay dos niveles, con archivos separados en `Documentos\BEYONIX-backups\deploy-approvals\`:
+- `<sha>.estandar.aprobacion`: pasaron lint y typecheck (npm test **no** se ejecutó);
+- `<sha>.completa.aprobacion`: pasaron lint, typecheck y `npm test`.
+
+Cada uno guarda la identidad de lo validado:
 - SHA y árbol del commit, y su `package-lock`;
 - dependencias instaladas en el repo: `node_modules/.package-lock.json` y la **huella por contenido**
   de todo `node_modules` (sha256 de cada archivo, enlaces y sus destinos, directorios);
 - versiones de node y npm, y la plataforma;
 - hash del `.env.local` (nunca su contenido);
 - `NODE_OPTIONS`, `NODE_ENV`, `TZ` y `CI`;
-- la lista de validaciones exigidas.
+- el nivel y la lista exacta de validaciones ejecutadas.
 
 Una línea `control=` (sha256 del resto) detecta ediciones o archivos truncados.
 
 Se reutiliza **sólo** si el archivo está íntegro, dice `resultado=aprobado` y coincide TODA la
-identidad. Ante cualquier diferencia o duda se valida completo, y el log dice qué cambió.
-- Antes de validar se borra la aprobación del commit.
-- Se escribe sólo si las tres pasan y la identidad (incluido el contenido de `node_modules`) no cambió
-  mientras tanto, así que una validación fallida o interrumpida, o dependencias alteradas durante la
-  validación, nunca dejan aprobación.
+identidad. Ante cualquier diferencia o duda se vuelve a validar, y el log dice qué cambió.
+- Deploy normal: reutiliza una aprobación completa o estándar válida; si no hay, ejecuta la estándar.
+  Nunca informa tests aprobados si sólo se reutilizó o ejecutó la estándar.
+- `-ValidacionCompleta`: ejecuta siempre lint, typecheck y `npm test` (no reutiliza) y guarda la completa.
+  Si el commit ya está activo en producción, sólo valida y termina: no compila, no transfiere ni activa.
+- Una aprobación estándar nunca se acepta como completa (archivo, nivel y validaciones distintos).
+- Antes de validar (en cualquier nivel) se borran **las dos** aprobaciones del commit: ambas dependen de
+  lint y typecheck, así que un fallo o una interrupción no deja ninguna reutilizable.
+- Al terminar se guarda sólo lo que esa ejecución demostró, si la identidad (incluido el contenido de
+  `node_modules`) no cambió mientras tanto: estándar si pasaron lint y typecheck (también cuando en la
+  completa fallaron o se cortaron sólo los tests); completa sólo si además pasó `npm test`.
 - Si la integridad de `node_modules` no se puede comprobar (archivo ilegible, enlace hacia fuera de
-  `node_modules`, cálculo interrumpido), la identidad queda indeterminada y se valida completo.
-- `-ValidacionCompleta` ignora la aprobación existente.
+  `node_modules`, cálculo interrumpido), la identidad queda indeterminada y se vuelve a validar.
 - La reutilización queda registrada en el log.
 
 Siempre se ejecutan: `next build`, migraciones, variables, humo en el VPS y los controles de activación.

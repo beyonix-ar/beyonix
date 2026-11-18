@@ -207,7 +207,7 @@ check "dir-entorno con otro nombre => rechazado" '! bash "$HERE/local-build.sh" 
 echo "8. Aprobación de validaciones por commit"
 AP="$TMP/aprobaciones"
 ID1="$(approval_identity "$F" "$SHA1")"
-check "identidad completa (12 claves, sin secretos en claro)" '[ "$(wc -l <<< "$ID1")" = 12 ] && ! grep -q "valor-de-prueba" <<< "$ID1"'
+check "identidad completa (13 claves, sin secretos en claro)" '[ "$(wc -l <<< "$ID1")" = 13 ] && ! grep -q "valor-de-prueba" <<< "$ID1"'
 check "sin aprobación previa => no reutiliza" '! approval_check "$AP" "$SHA1" "$ID1" >/dev/null'
 approval_save "$AP" "$SHA1" "$ID1" "C:\\log.txt"
 check "aprobación guardada y válida => reutiliza" 'approval_check "$AP" "$SHA1" "$ID1" >/dev/null'
@@ -398,6 +398,232 @@ check "(10) tras el npm ci fallido no queda sello reutilizable" '[ ! -e "$ER/dep
 out="$(build "$SHA1")"; rc=$?
 check "volver a un commit sano => instala limpio y funciona" '[ $rc = 0 ] && grep -q "^dependencias=instaladas" <<< "$out" && [ ! -e "$W/node_modules/.postinstall" ]'
 
+echo "16. Niveles de validación: estándar (sin npm test) y completa (con npm test)"
+check "nivel estándar: lint + typecheck, sin npm test" '[ "$(validation_spec estandar)" = "lint=npm run lint|typecheck=npm run typecheck" ]'
+check "nivel completa: incluye npm test" 'grep -q "tests=npm test" <<< "$(validation_spec completa)"'
+check "nivel inválido => rechazado" '! validation_spec otro >/dev/null && ! approval_file "$TMP" "$SHA1" otro >/dev/null && ! approval_identity "$F" "$SHA1" otro >/dev/null'
+BASE16="$(approval_base_identity "$F" "$SHA1")"
+IDE="$(approval_with_level "$BASE16" estandar)"; IDC="$(approval_with_level "$BASE16" completa)"
+check "identidades de cada nivel difieren sólo en nivel y validaciones" '[ "$(diff <(echo "$IDE") <(echo "$IDC") | grep -c "^[<>]")" = 4 ] && grep -qx "nivel=estandar" <<< "$IDE" && grep -qx "nivel=completa" <<< "$IDC"'
+check "approval_identity sin nivel = estándar" '[ "$(approval_identity "$F" "$SHA1")" = "$IDE" ]'
+check "cada nivel tiene su propio archivo" '[ "$(approval_file "$TMP" "$SHA1" estandar)" != "$(approval_file "$TMP" "$SHA1" completa)" ]'
+AP3="$TMP/aprobaciones3"
+check "no se guarda una identidad bajo otro nivel (estándar como completa)" '! approval_save "$AP3" "$SHA1" "$IDE" x completa && [ ! -e "$(approval_file "$AP3" "$SHA1" completa)" ]'
+approval_save "$AP3" "$SHA1" "$IDE" "C:\\std.txt" estandar
+check "aprobación estándar NO sirve como completa" '[ "$(approval_check "$AP3" "$SHA1" "$IDC" completa)" = "sin aprobación previa para este commit" ]'
+cp "$(approval_file "$AP3" "$SHA1" estandar)" "$(approval_file "$AP3" "$SHA1" completa)"
+check "aprobación estándar copiada al archivo completo => rechazada (cambió: nivel)" '[ "$(approval_check "$AP3" "$SHA1" "$IDC" completa)" = "cambió: nivel" ]'
+check "approval_check con identidad de otro nivel => rechazada" '[ "$(approval_check "$AP3" "$SHA1" "$IDC" estandar)" = "identidad de otro nivel de validación" ]'
+check "deploy estándar con aprobación estándar (y completa falsa) => reutiliza ESTÁNDAR, no completa" '[ "$(approval_pick "$AP3" "$SHA1" "$BASE16" 2>/dev/null)" = estandar ]'
+approval_save "$AP3" "$SHA1" "$IDC" "C:\\full.txt" completa
+check "deploy estándar con aprobación completa válida => la reutiliza como completa" '[ "$(approval_pick "$AP3" "$SHA1" "$BASE16" 2>/dev/null)" = completa ]'
+approval_revoke "$AP3" "$SHA1" estandar
+check "revocar el nivel estándar no toca la aprobación completa" '[ ! -e "$(approval_file "$AP3" "$SHA1" estandar)" ] && approval_check "$AP3" "$SHA1" "$IDC" completa >/dev/null'
+approval_revoke "$AP3" "$SHA1" completa
+check "sin aprobaciones => no reutiliza y explica ambos niveles" '! approval_pick "$AP3" "$SHA1" "$BASE16" 2>"$TMP/pick.err" >/dev/null && grep -q "^completa: sin aprobación" "$TMP/pick.err" && grep -q "^estandar: sin aprobación" "$TMP/pick.err"'
+check "identidad base indeterminada => no reutiliza" '! approval_pick "$AP3" "$SHA1" "" 2>/dev/null'
+approval_save "$AP3" "$SHA1" "$IDE" x estandar
+FD16="$F/node_modules/dep/index.js"; cp "$FD16" "$TMP/fd16.bak"; sed -i 's/= 1/= 5/' "$FD16"
+check "aprobación estándar con dependencias alteradas => no reutiliza" '! approval_pick "$AP3" "$SHA1" "$(approval_base_identity "$F" "$SHA1")" 2>/dev/null'
+cp "$TMP/fd16.bak" "$FD16"
+check "aprobación de schema 2 (archivo <sha>.aprobacion, incluía tests) ya no se lee" '[ "$(basename "$(approval_file "$AP3" "$SHA1")")" = "$SHA1.estandar.aprobacion" ]'
+
+# validate_commit sobre un proyecto falso: cada script deja una marca; ningún test real de BEYONIX se ejecuta.
+V="$TMP/val"; mkdir -p "$V"
+cat > "$V/package.json" <<'JSON'
+{ "name": "val", "version": "1.0.0", "private": true,
+  "scripts": {
+    "lint": "node -e \"require('fs').appendFileSync('marcas', 'lint\\n'); process.exit(process.env.FAIL_LINT ? 1 : 0)\"",
+    "typecheck": "node -e \"require('fs').appendFileSync('marcas', 'typecheck\\n')\"",
+    "test": "node -e \"require('fs').appendFileSync('marcas', 'test\\n'); process.exit(process.env.FAIL_TEST ? 1 : 0)\"" } }
+JSON
+VLOG="$TMP/val.log"
+: > "$VLOG"; rm -f "$V/marcas"
+vout="$(validate_commit "$V" estandar "$VLOG")"; rc=$?
+check "estándar: ejecuta lint y typecheck" '[ $rc = 0 ] && grep -qx lint "$V/marcas" && grep -qx typecheck "$V/marcas"'
+check "estándar: NO ejecuta npm test" '! grep -qx test "$V/marcas" && grep -q "npm test omitido (validación estándar)" "$VLOG"'
+check "estándar: tiempos de lint y typecheck, ninguno de tests" 'grep -qE "^tiempo lint=[0-9]+$" <<< "$vout" && grep -qE "^tiempo typecheck=[0-9]+$" <<< "$vout" && ! grep -q "^tiempo tests=" <<< "$vout"'
+: > "$VLOG"; rm -f "$V/marcas"
+vout="$(validate_commit "$V" completa "$VLOG")"; rc=$?
+check "completa: ejecuta lint, typecheck y npm test" '[ $rc = 0 ] && [ "$(tr "\n" " " < "$V/marcas")" = "lint typecheck test " ] && grep -qE "^tiempo tests=[0-9]+$" <<< "$vout"'
+rm -f "$V/marcas"
+FAIL_TEST=1 validate_commit "$V" completa "$VLOG" >/dev/null; rc=$?
+check "completa: npm test fallido => código 12 (nunca aprobado)" '[ $rc = 12 ]'
+rm -f "$V/marcas"
+FAIL_LINT=1 validate_commit "$V" estandar "$VLOG" >/dev/null; rc=$?
+check "lint fallido => código 10 y no sigue con typecheck" '[ $rc = 10 ] && ! grep -qx typecheck "$V/marcas"'
+validate_commit "$V" otro "$VLOG" >/dev/null; rc=$?
+check "nivel inválido => código 2 sin ejecutar nada" '[ $rc = 2 ]'
+
+# Conexión deploy-beyonix.ps1 -> deploy.sh -> validate_commit (estática: no se ejecuta un deploy real).
+DS="$HERE/deploy.sh"; PS1="$HERE/../../deploy-beyonix.ps1"
+check "deploy.sh: el nivel por defecto es estándar y --validacion-completa lo cambia a completa" 'grep -qx "VALIDATION_LEVEL=estandar" "$DS" && grep -qx "\[ \"\$FORCE_VALIDATION\" = 1 \] && VALIDATION_LEVEL=completa" "$DS"'
+check "deploy.sh: valida sólo mediante validate_commit con ese nivel (sin npm test directo)" 'grep -q "validate_commit \"\$REPO\" \"\$VALIDATION_LEVEL\" \"\$LOG\"" "$DS" && ! grep -qE "^[^#]*(run_with_tree_timeout|run timeout [0-9]+ npm|npm test\b[^\"]*\$)" "$DS"'
+check "deploy.sh: revoca TODOS los niveles antes de validar y registra sólo lo demostrado" 'grep -q "approval_revoke_all \"\$APPROVALS\" \"\$SHA\"" "$DS" && grep -q "approval_record \"\$APPROVALS\" \"\$SHA\" \"\$VALIDATION_LEVEL\" \"\$VAL_RC\"" "$DS" && ! grep -qE "^[^#]*approval_(save|revoke) " "$DS"'
+check "deploy.sh: la validación completa nunca reutiliza aprobaciones" 'grep -q "if \[ \"\$VALIDATION_LEVEL\" = completa \]; then" "$DS" && grep -B1 -A1 "validación completa solicitada" "$DS" | grep -q "VALIDATION_LEVEL\" = completa"'
+check "deploy-beyonix.ps1: -ValidacionCompleta es el único que pasa --validacion-completa" '[ "$(grep -c -- "--validacion-completa" "$PS1")" = 1 ] && grep -q "if (\$ValidacionCompleta) { \$argumentos += .--validacion-completa. }" "$PS1"'
+echo "17. Registro de aprobaciones tras cada resultado (approval_record)"
+AP4="$TMP/aprobaciones4"
+B17="$(approval_base_identity "$F" "$SHA1")"
+seed_both() { approval_save "$AP4" "$SHA1" "$(approval_with_level "$B17" estandar)" x estandar && approval_save "$AP4" "$SHA1" "$(approval_with_level "$B17" completa)" x completa; }
+has() { approval_check "$AP4" "$SHA1" "$(approval_with_level "$B17" "$1")" "$1" >/dev/null; }
+seed_both; approval_revoke_all "$AP4" "$SHA1"
+check "approval_revoke_all borra ambos niveles" '! has estandar && ! has completa'
+for rc in 10 11 2 1; do
+  seed_both; approval_revoke_all "$AP4" "$SHA1"
+  approval_record "$AP4" "$SHA1" completa "$rc" "$B17" "$B17" x >/dev/null
+  check "completa con rc=$rc (lint/typecheck fallido o error) => ninguna aprobación" '! has estandar && ! has completa'
+done
+for rc in 12 124 125; do
+  approval_revoke_all "$AP4" "$SHA1"
+  out="$(approval_record "$AP4" "$SHA1" completa "$rc" "$B17" "$B17" x)"
+  check "completa con rc=$rc (sólo fallaron/cortaron tests) => sólo estándar (lint y typecheck pasaron)" '[ "$out" = estandar ] && has estandar && ! has completa'
+done
+approval_revoke_all "$AP4" "$SHA1"
+out="$(approval_record "$AP4" "$SHA1" completa 0 "$B17" "$B17" x)"
+check "(6) completa exitosa => estándar y completa consistentes" '[ "$(tr "\n" " " <<< "$out")" = "estandar completa " ] && has estandar && has completa'
+approval_revoke_all "$AP4" "$SHA1"
+out="$(approval_record "$AP4" "$SHA1" estandar 0 "$B17" "$B17" x)"
+check "estándar exitosa => sólo estándar (nunca completa)" '[ "$out" = estandar ] && has estandar && ! has completa'
+approval_revoke_all "$AP4" "$SHA1"
+check "estándar con rc=12 imposible de elevar a completa" '[ "$(approval_record "$AP4" "$SHA1" estandar 12 "$B17" "$B17" x)" = estandar ] && ! has completa'
+approval_revoke_all "$AP4" "$SHA1"
+check "identidad cambiada durante la validación => no guarda nada" '! approval_record "$AP4" "$SHA1" completa 0 "$B17" "${B17/esquema=/esquema=x}" x >/dev/null && ! has estandar && ! has completa'
+check "identidad posterior indeterminada => no guarda nada" '! approval_record "$AP4" "$SHA1" completa 0 "$B17" "" x >/dev/null && ! has estandar'
+
+# ── deploy.sh de punta a punta, aislado ────────────────────────────────────────
+# ssh/scp/curl/npx son stubs locales: no hay red ni acceso al VPS, a PM2 ni a Supabase. HOME y
+# USERPROFILE apuntan a directorios temporales (sin clave SSH real; logs/aprobaciones/build aislados).
+echo "18. deploy.sh aislado: commit activo, -ValidacionCompleta e invalidación de aprobaciones"
+E="$TMP/e2e"; ST="$E/stubs"; R="$E/repo"; mkdir -p "$ST" "$E/home" "$E/perfil"
+export E2E_DIR="$E"
+cat > "$ST/ssh" <<'SH'
+#!/usr/bin/env bash
+body="$(cat)"
+case "$body" in
+  *'echo "public_env_hash='*)
+    echo "status" >> "$E2E_DIR/ssh.log"
+    [ -f "$E2E_DIR/status.extra" ] && cat "$E2E_DIR/status.extra"
+    printf 'pm2_status=online\npm2_cwd=/home/beyonix/apps/beyonix-current\nlocal_home=200\nswitch_lock=libre\n'
+    printf 'active_target=/home/beyonix/apps/beyonix-releases/1234567-20260101-000000\nactive_build=build-activo\n'
+    printf 'disk_free_mb=9000\nmem_available_mb=2000\nactive_sha=%s\npublic_env_hash=%s\n' "$(cat "$E2E_DIR/active_sha")" "$(cat "$E2E_DIR/public_hash")" ;;
+  *) echo "NO-PERMITIDO ssh $*" | tee -a "$E2E_DIR/todo.log" >> "$E2E_DIR/ssh.log"; exit 97 ;;
+esac
+SH
+for c in scp curl; do
+  printf '#!/usr/bin/env bash\necho "NO-PERMITIDO %s $*" | tee -a "$E2E_DIR/todo.log" >> "$E2E_DIR/ssh.log"; exit 97\n' "$c" > "$ST/$c"
+done
+cat > "$ST/npx" <<'SH'
+#!/usr/bin/env bash
+case " $* " in
+  *" supabase db query "*) cat "$E2E_DIR/migraciones.json" ;;
+  *) echo "NO-PERMITIDO npx $*" | tee -a "$E2E_DIR/todo.log" >> "$E2E_DIR/ssh.log"; exit 97 ;;
+esac
+SH
+chmod +x "$ST"/*
+mkdir -p "$R"; git init -q -b main "$R"; git init -q --bare "$E/origin.git"
+cat > "$R/v.js" <<'JS'
+const fs = require("fs"), step = process.argv[2]
+fs.appendFileSync(process.env.E2E_DIR + "/marcas", step + "\n")
+if (process.env["FAIL_" + step.toUpperCase()]) process.exit(1)
+if (step === "test" && process.env.E2E_SLEEP_TEST) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(process.env.E2E_SLEEP_TEST))
+JS
+cat > "$R/package.json" <<'JSON'
+{ "name": "e2e", "version": "1.0.0", "private": true,
+  "scripts": { "lint": "node v.js lint", "typecheck": "node v.js typecheck", "test": "node v.js test", "build": "node -e \"process.exit(1)\"" } }
+JSON
+printf '{"name":"e2e","version":"1.0.0","lockfileVersion":3,"requires":true,"packages":{"":{"name":"e2e","version":"1.0.0"}}}\n' > "$R/package-lock.json"
+mkdir -p "$R/supabase/migrations" "$R/supabase/.temp" "$R/node_modules/x"
+echo 'select 1;' > "$R/supabase/migrations/20260101000000_init.sql"
+echo 'ref' > "$R/supabase/.temp/project-ref"
+printf 'node_modules/\n.env.local\nsupabase/.temp/\n' > "$R/.gitignore"
+printf '{"name":"e2e","lockfileVersion":3,"packages":{}}\n' > "$R/node_modules/.package-lock.json"
+echo 'module.exports = 1' > "$R/node_modules/x/index.js"
+printf 'SECRETO=x\nNEXT_PUBLIC_X=1\n' > "$R/.env.local"
+git -C "$R" add . && git -C "$R" -c user.email=t@t -c user.name=t commit -qm uno
+git -C "$R" remote add origin "$E/origin.git" && git -C "$R" push -q origin main 2>/dev/null
+RSHA="$(git -C "$R" rev-parse HEAD)"
+grep -E '^NEXT_PUBLIC_[A-Z0-9_]*=' "$R/.env.local" | tr -d '\r' | sed -E 's/[[:space:]]+$//' | LC_ALL=C sort | sha256sum | cut -c1-16 > "$E/public_hash"
+echo '[{"version":"20260101000000"}]' > "$E/migraciones.json"
+EAP="$E/perfil/Documents/BEYONIX-backups/deploy-approvals"
+EB="$E/perfil/Documents/BEYONIX-backups/build-env"
+e2e() { # [argumentos de deploy.sh]; variables FAIL_*/E2E_SLEEP_TEST se pasan por entorno
+  : > "$E/marcas"; : > "$E/ssh.log"
+  PATH="$ST:$PATH" HOME="$E/home" USERPROFILE="$(cygpath -w "$E/perfil")" BEYONIX_DEPLOY_REPO="$R" \
+    bash "$HERE/deploy.sh" "$@" 2>&1
+}
+marcas() { tr '\n' ' ' < "$E/marcas" | sed 's/ $//'; }
+eh() { approval_check "$EAP" "$RSHA" "$(approval_identity "$R" "$RSHA" "$1")" "$1" >/dev/null; }
+only_status_ssh() { [ -z "$(grep -v '^status$' "$E/ssh.log")" ]; }
+no_build() { # en la última ejecución no se invocó local-build.sh
+  local l; l="$(ls -t "$E/perfil/Documents/BEYONIX-backups/deploy-logs"/deploy-*.log | head -1)"
+  [ -f "$l" ] && ! grep -q "local-build.sh" "$l"
+}
+
+if [ "$(PATH="$ST:$PATH" command -v ssh)" != "$ST/ssh" ] || [ "$(PATH="$ST:$PATH" command -v npx)" != "$ST/npx" ]; then
+  ko "los stubs no tienen prioridad en PATH: se omite la prueba de punta a punta (nunca contra el VPS real)"
+else
+  echo "$RSHA" > "$E/active_sha"
+  out="$(e2e)"; rc=$?
+  check "(5) commit ya activo + deploy normal => termina sin validar ni desplegar" '[ $rc = 0 ] && grep -q "ya tiene esta versión" <<< "$out" && [ -z "$(marcas)" ] && only_status_ssh && no_build'
+  out="$(e2e --validacion-completa)"; rc=$?
+  check "(4) commit ya activo + -ValidacionCompleta => ejecuta lint, typecheck y npm test" '[ $rc = 0 ] && [ "$(marcas)" = "lint typecheck test" ] && grep -q "no se compiló ni se desplegó nada" <<< "$out" && grep -q "Validación: completa: ESLint + TypeScript + npm test" <<< "$out"'
+  check "(4) ...sin compilar, transferir ni activar (sólo lectura de estado)" 'only_status_ssh && no_build'
+  check "(6) validación completa exitosa => aprobaciones estándar y completa consistentes" 'eh estandar && eh completa'
+  out="$(e2e --validacion-completa)"
+  check "(4) -ValidacionCompleta nunca reutiliza: repite npm test aunque haya aprobación completa" '[ "$(marcas)" = "lint typecheck test" ] && ! grep -q "reutiliza" <<< "$out"'
+  out="$(FAIL_LINT=1 e2e --validacion-completa)"; rc=$?
+  check "(1) estándar existente + completa con ESLint fallido => ambas aprobaciones invalidadas" '[ $rc = 1 ] && grep -q "lint con errores" <<< "$out" && [ "$(marcas)" = lint ] && ! eh estandar && ! eh completa'
+  e2e --validacion-completa >/dev/null
+  out="$(FAIL_TYPECHECK=1 e2e --validacion-completa)"; rc=$?
+  check "(2) estándar existente + completa con TypeScript fallido => ambas aprobaciones invalidadas" '[ $rc = 1 ] && grep -q "typecheck con errores" <<< "$out" && ! eh estandar && ! eh completa'
+  echo 0000000000000000000000000000000000000000 > "$E/active_sha"
+  out="$(e2e)"; rc=$?
+  check "(3) tras la completa fallida, deploy normal => vuelve a ejecutar lint y typecheck (sin npm test)" '[ "$(marcas)" = "lint typecheck" ] && grep -q "Validaciones: estándar" <<< "$out" && ! grep -q "se reutiliza la aprobación" <<< "$out"'
+  check "(3) ...y sigue al build local (falla a propósito en el repo falso) sin tocar el VPS" '[ $rc = 1 ] && grep -q "el build falló" <<< "$out" && only_status_ssh'
+  check "(3) la estándar recién demostrada queda aprobada, nunca la completa" 'eh estandar && ! eh completa'
+  out="$(e2e)"
+  check "deploy normal siguiente reutiliza la estándar y dice que npm test NO se ejecutó" '[ -z "$(marcas)" ] && grep -q "se reutiliza la aprobación estándar: ESLint + TypeScript (npm test NO ejecutado)" <<< "$out"'
+  echo "$RSHA" > "$E/active_sha"
+  out="$(FAIL_TEST=1 e2e --validacion-completa)"; rc=$?
+  check "completa con npm test fallido => se detiene; queda sólo la estándar (lint y typecheck pasaron)" '[ $rc = 1 ] && grep -q "fallaron tests" <<< "$out" && eh estandar && ! eh completa'
+  e2e --validacion-completa >/dev/null
+  E2E_SLEEP_TEST=30000 PATH="$ST:$PATH" HOME="$E/home" USERPROFILE="$(cygpath -w "$E/perfil")" BEYONIX_DEPLOY_REPO="$R" \
+    bash "$HERE/deploy.sh" --validacion-completa > "$E/int.out" 2>&1 & DP=$!
+  : > "$E/marcas"
+  for _ in $(seq 1 120); do grep -qx test "$E/marcas" 2>/dev/null && break; sleep 0.5; done
+  kill -TERM "$DP" 2>/dev/null; wait "$DP"; rc=$?
+  check "(7) interrupción durante npm test => ninguna aprobación reutilizable (ni la estándar previa)" '[ $rc != 0 ] && grep -qx test "$E/marcas" && ! eh estandar && ! eh completa'
+  # El node del test falso queda huérfano al cortar bash: se termina SÓLO ese proceso (línea "v.js test").
+  cat > "$E/kill-orphan.ps1" <<'PS'
+Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -like '*v.js test*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+PS
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$E/kill-orphan.ps1")" >/dev/null 2>&1
+  rmdir "$E/perfil/Documents/BEYONIX-backups/deploy-logs/.deploy.lock" 2>/dev/null
+  out="$(e2e)"
+  check "(7) tras la interrupción, deploy normal con commit activo termina sin desplegar" 'grep -q "ya tiene esta versión" <<< "$out" && no_build'
+
+  # (8) Las protecciones previas siguen aplicándose también con -ValidacionCompleta, antes de validar.
+  echo x >> "$R/v.js"
+  out="$(e2e --validacion-completa)"; rc=$?
+  check "(8) cambios sin commit => se detiene antes de validar" '[ $rc = 1 ] && grep -q "hay cambios sin commit" <<< "$out" && [ -z "$(marcas)" ]'
+  git -C "$R" checkout -q -- v.js
+  printf 'pm2_status=stopped\n' > "$E/status.extra"
+  out="$(e2e --validacion-completa)"; rc=$?
+  check "(8) PM2 no online => se detiene antes de validar" '[ $rc = 1 ] && grep -q "no está online" <<< "$out" && [ -z "$(marcas)" ]'
+  rm -f "$E/status.extra"
+  echo '[]' > "$E/migraciones.json"
+  out="$(e2e --validacion-completa)"; rc=$?
+  check "(8) respuesta de migraciones inválida => se detiene antes de validar" '[ $rc = 1 ] && grep -q "migraciones con formato inesperado" <<< "$out" && [ -z "$(marcas)" ]'
+  echo '[{"version":"20260101000000"},{"version":"20990101000000"}]' > "$E/migraciones.json"
+  out="$(e2e --validacion-completa)"; rc=$?
+  check "(8) producción con migraciones desconocidas => se detiene antes de validar" '[ $rc = 1 ] && grep -q "migraciones que este commit no conoce" <<< "$out" && [ -z "$(marcas)" ]'
+  echo '[{"version":"20260101000000"}]' > "$E/migraciones.json"
+  echo 0000000000000000 > "$E/public_hash"
+  out="$(e2e --validacion-completa)"; rc=$?
+  check "(8) variables públicas distintas de producción => se detiene antes de validar" '[ $rc = 1 ] && grep -q "variables públicas" <<< "$out" && [ -z "$(marcas)" ]'
+  check "(8) en ninguna ejecución hubo ssh/scp/curl/npx fuera de la lectura de estado y migraciones" '[ ! -s "$E/todo.log" ]'
+fi
 echo
 echo "RESULTADO LOCAL: $PASS OK, $FAIL fallos"
 [ "$FAIL" = 0 ]

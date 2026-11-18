@@ -4,7 +4,9 @@
 #   bash deploy.sh --solo-preparar      todo menos la activación (no reinicia nada)
 #   bash deploy.sh --rollback [release] vuelve a la versión anterior ya compilada
 #   bash deploy.sh --estado             muestra la versión activa y el último cambio (sólo lectura)
-#   --validacion-completa (con despliegue o --solo-preparar): ignora aprobaciones previas del commit
+#   Validación estándar (por defecto): ESLint + TypeScript. npm test NO se ejecuta.
+#   --validacion-completa (con despliegue o --solo-preparar): ESLint + TypeScript + npm test, siempre
+#   ejecutados (no reutiliza aprobaciones previas).
 # Nunca aplica migraciones, nunca toca variables de entorno, la base de datos ni los timers.
 # En consola sólo muestra pasos simples; el detalle completo queda en el log.
 set -uo pipefail
@@ -33,7 +35,9 @@ case "${1:-}" in
     fi ;;
   *) usage ;;
 esac
-
+VALIDATION_LEVEL=estandar
+[ "$FORCE_VALIDATION" = 1 ] && VALIDATION_LEVEL=completa
+VALIDATION_DONE=""
 # BEYONIX_DEPLOY_REPO sólo para probar estos scripts contra otro checkout (p. ej. un worktree limpio).
 REPO="${BEYONIX_DEPLOY_REPO:-$(git -C "$HERE" rev-parse --show-toplevel)}"
 BASE="$(cygpath -u "$USERPROFILE")/Documents/BEYONIX-backups"
@@ -83,8 +87,14 @@ print_times() {
   echo "Tiempos:"
   for e in "${TIMES[@]}"; do
     k="${e% *}"; v="${e##* }"
-    if [ "$k" = validaciones_reutilizadas ]; then
-      line="$(printf '  %-42s %s' "ESLint + TypeScript + Tests" "reutilizados (aprobación previa)")"
+    if [ "$k" = validaciones_reutilizadas_completa ]; then
+      line="$(printf '  %-42s %s' "ESLint + TypeScript + Tests" "reutilizados (aprobación completa previa)")"
+    elif [ "$k" = validaciones_reutilizadas_estandar ]; then
+      line="$(printf '  %-42s %s' "ESLint + TypeScript" "reutilizados (aprobación estándar previa)")"
+      echo "$line"; log "$line"
+      line="$(printf '  %-42s %s' "Tests" "NO ejecutados (validación estándar)")"
+    elif [ "$k" = tests_omitidos ]; then
+      line="$(printf '  %-42s %s' "Tests" "NO ejecutados (validación estándar)")"
     else
       line="$(printf '  %-42s %10s' "$(stage_label "$k")" "$(fmt_ms "$v")")"
     fi
@@ -195,12 +205,19 @@ ACTIVE_BUILD="$(kv active_build "$STATUS")"
 is_release_path "$ACTIVE" && [ -n "$ACTIVE_BUILD" ] || abort "no se pudo leer la versión activa"
 [ "$(kv disk_free_mb "$STATUS")" -ge 4000 ] || abort "menos de 4 GB libres en el VPS (limpiar releases viejas manualmente)"
 [ "$(kv mem_available_mb "$STATUS")" -ge 900 ] || abort "memoria insuficiente en el VPS para verificar la versión nueva"
+ONLY_VALIDATE=0
 if [ "$(kv active_sha "$STATUS")" = "$SHA" ]; then
-  if [ "$MODE" = desplegar ]; then
+  if [ "$MODE" = desplegar ] && [ "$VALIDATION_LEVEL" != completa ]; then
     say "BEYONIX ya tiene esta versión ($(git -C "$REPO" rev-parse --short HEAD)). No hay nada para actualizar."
     exit 0
+  elif [ "$MODE" = desplegar ]; then
+    # -ValidacionCompleta pedida sobre la versión activa: se valida (con npm test) y se termina sin
+    # compilar, transferir ni activar nada.
+    ONLY_VALIDATE=1
+    log "AVISO: el commit ya está activo; sólo se ejecuta la validación completa (no se despliega)"
+  else
+    log "AVISO: el commit ya está activo; se prepara igual (--solo-preparar)"
   fi
-  log "AVISO: el commit ya está activo; se prepara igual (--solo-preparar)"
 fi
 t_end vps
 
@@ -234,53 +251,72 @@ t_end migraciones
 
 # ───────────────────────── 2. Compilación ─────────────────────────
 say "Compilando."
-# Validaciones (lint + typecheck + tests): se reutiliza la aprobación de ESTE commit sólo si coincide
-# toda su identidad (árbol, dependencias, herramientas, .env.local, entorno). Ante cualquier duda, completas.
-IDENTITY="$(approval_identity "$REPO" "$SHA" 2>>"$LOG")" || IDENTITY=""
-APPROVAL_FILE="$(approval_file "$APPROVALS" "$SHA")"
-REUSED=0
-if [ "$FORCE_VALIDATION" = 1 ]; then
-  log "aprobación: validación completa forzada (--validacion-completa)"
-elif [ -z "$IDENTITY" ]; then
-  log "aprobación: identidad indeterminada => validación completa"
-elif reason="$(approval_check "$APPROVALS" "$SHA" "$IDENTITY")"; then
-  REUSED=1
-  log "aprobación REUTILIZADA: $APPROVAL_FILE (aprobada el $(sed -n 's/^aprobado_en=//p' "$APPROVAL_FILE"); log de esa validación: $(sed -n 's/^log=//p' "$APPROVAL_FILE"))"
+# Validaciones. Deploy normal: nivel estándar (lint + typecheck; npm test NO se ejecuta). Con
+# --validacion-completa: lint + typecheck + npm test, siempre ejecutados (nunca se reutilizan).
+# En el estándar se reutiliza una aprobación de ESTE commit (completa o estándar) sólo si coincide toda
+# su identidad (árbol, contenido de dependencias, herramientas, .env.local, entorno, nivel).
+BASE_IDENTITY="$(approval_base_identity "$REPO" "$SHA" 2>>"$LOG")" || BASE_IDENTITY=""
+REUSED_LEVEL=""
+if [ "$VALIDATION_LEVEL" = completa ]; then
+  log "aprobación: validación completa solicitada (--validacion-completa) => se ejecutan lint, typecheck y npm test"
+elif [ -z "$BASE_IDENTITY" ]; then
+  log "aprobación: identidad indeterminada => validación estándar"
+elif REUSED_LEVEL="$(approval_pick "$APPROVALS" "$SHA" "$BASE_IDENTITY" 2>"$LOG.motivos")"; then
+  reused_file="$(approval_file "$APPROVALS" "$SHA" "$REUSED_LEVEL")"
+  log "aprobación REUTILIZADA ($(validation_description "$REUSED_LEVEL")): $reused_file (aprobada el $(sed -n 's/^aprobado_en=//p' "$reused_file"); log de esa validación: $(sed -n 's/^log=//p' "$reused_file"))"
 else
-  log "aprobación: no reutilizable ($reason) => validación completa"
+  REUSED_LEVEL=""
+  log "aprobación: no reutilizable ($(tr '\n' ';' < "$LOG.motivos")) => validación estándar"
 fi
+rm -f -- "$LOG.motivos"
 t_end aprobacion
-if [ "$REUSED" = 1 ]; then
-  echo "Validaciones: se reutiliza la aprobación previa de este mismo commit (para repetirlas: -ValidacionCompleta)."
-  add_time validaciones_reutilizadas 0
+if [ -n "$REUSED_LEVEL" ]; then
+  VALIDATION_DONE="$(validation_description "$REUSED_LEVEL") — aprobación previa reutilizada"
+  echo "Validaciones: se reutiliza la aprobación $(validation_description "$REUSED_LEVEL") de este mismo commit."
+  add_time "validaciones_reutilizadas_$REUSED_LEVEL" 0
 else
-  # Primero se invalida: una validación interrumpida o fallida nunca deja una aprobación utilizable.
-  approval_revoke "$APPROVALS" "$SHA" || abort "no se pudo invalidar la aprobación anterior"
-  ( cd "$REPO" && run timeout 900 npm run lint ) || abort "lint con errores"
-  t_end lint
-  ( cd "$REPO" && run timeout 900 npm run typecheck ) || abort "typecheck con errores"
-  t_end typecheck
-  log "\$ npm test (máx. 90 min, con limpieza del árbol de procesos)"
-  ( cd "$REPO" && run_with_tree_timeout 5400 "$LOG" npm test )
-  case $? in
+  if [ "$VALIDATION_LEVEL" = completa ]; then
+    echo "Validaciones: completa (ESLint + TypeScript + npm test)."
+  else
+    echo "Validaciones: estándar (ESLint + TypeScript). npm test no se ejecuta; para incluirlo: -ValidacionCompleta."
+  fi
+  # Primero se invalidan TODOS los niveles del commit (todos dependen de lint y typecheck): una
+  # validación fallida o interrumpida nunca deja una aprobación utilizable, tampoco una estándar previa.
+  approval_revoke_all "$APPROVALS" "$SHA" || abort "no se pudieron invalidar las aprobaciones anteriores"
+  VAL_OUT="$(validate_commit "$REPO" "$VALIDATION_LEVEL" "$LOG")"
+  VAL_RC=$?
+  add_times_from "$VAL_OUT"
+  t_begin
+  # Se aprueba sólo lo que ESTA ejecución demostró y sólo si la identidad (incluido el contenido de
+  # node_modules) no cambió mientras se validaba: la aprobación corresponde a las dependencias usadas.
+  if validation_passed_level estandar "$VAL_RC"; then
+    AFTER_IDENTITY="$(approval_base_identity "$REPO" "$SHA" 2>/dev/null)" || AFTER_IDENTITY=""
+    t_end integridad_aprobacion
+    if saved="$(approval_record "$APPROVALS" "$SHA" "$VALIDATION_LEVEL" "$VAL_RC" "$BASE_IDENTITY" "$AFTER_IDENTITY" "$(winlog)")"; then
+      log "aprobaciones guardadas: $(tr '\n' ' ' <<< "$saved")"
+    else
+      changed="$(diff <(printf '%s\n' "$BASE_IDENTITY") <(printf '%s\n' "$AFTER_IDENTITY") | sed -nE 's/^[<>] ([a-z_]+)=.*/\1/p' | sort -u | tr '\n' ' ')"
+      log "AVISO: no se guarda aprobación: la identidad cambió o no se pudo recalcular durante la validación (${changed:-indeterminada}), o falló la escritura"
+    fi
+  fi
+  case $VAL_RC in
     0) ;;
+    10) abort "lint con errores" ;;
+    11) abort "typecheck con errores" ;;
     124) abort "los tests superaron 90 minutos (se terminaron todos sus procesos)" ;;
     125) abort "los tests superaron 90 minutos y quedaron procesos sin terminar (ver log)" ;;
-    *) abort "fallaron tests" ;;
+    12) abort "fallaron tests" ;;
+    *) abort "no se pudieron ejecutar las validaciones (código $VAL_RC)" ;;
   esac
-  t_end tests
-  # Se aprueba sólo si la identidad (incluido el contenido de node_modules) no cambió mientras se
-  # validaba (p. ej. un npm install o una edición en paralelo): así la aprobación corresponde a las
-  # dependencias realmente usadas por lint, typecheck y tests.
-  AFTER_IDENTITY="$(approval_identity "$REPO" "$SHA" 2>/dev/null)" || AFTER_IDENTITY=""
-  t_end integridad_aprobacion
-  if [ -n "$IDENTITY" ] && [ "$AFTER_IDENTITY" = "$IDENTITY" ]; then
-    if approval_save "$APPROVALS" "$SHA" "$IDENTITY" "$(winlog)"; then log "aprobación guardada: $APPROVAL_FILE"
-    else log "AVISO: no se pudo guardar la aprobación (el próximo despliegue validará completo)"; fi
-  else
-    changed="$(diff <(printf '%s\n' "$IDENTITY") <(printf '%s\n' "$AFTER_IDENTITY") | sed -nE 's/^[<>] ([a-z_]+)=.*/\1/p' | sort -u | tr '\n' ' ')"
-    log "AVISO: la identidad cambió o no se pudo recalcular durante la validación (${changed:-indeterminada}); no se guarda aprobación"
-  fi
+  [ "$VALIDATION_LEVEL" = completa ] || add_time tests_omitidos 0
+  VALIDATION_DONE="$(validation_description "$VALIDATION_LEVEL") — ejecutada ahora"
+fi
+log "validación del commit: $VALIDATION_DONE"
+if [ "$ONLY_VALIDATE" = 1 ]; then
+  say "Validación completa terminada. BEYONIX ya tiene esta versión: no se compiló ni se desplegó nada."
+  echo "Validación: $VALIDATION_DONE"
+  echo "Detalle: $(winlog)"
+  exit 0
 fi
 
 log "\$ local-build.sh $SHA (entorno $BUILD_ENV)"
@@ -316,6 +352,7 @@ is_release_path "$RELEASE" || abort "el VPS informó una release inválida"
 
 if [ "$MODE" = preparar ]; then
   say "Versión preparada y verificada, SIN activar."
+  echo "Validación: $VALIDATION_DONE"
   echo "Release: $(basename "$RELEASE") (build $NEW_BUILD)"
   echo "Detalle: $(winlog)"
   exit 0
@@ -385,6 +422,7 @@ if [ "$pub" != 1 ]; then
 fi
 
 say "Actualización completada."
+echo "Validación: $VALIDATION_DONE"
 echo "Versión: $(git -C "$REPO" rev-parse --short HEAD) (build $NEW_BUILD)"
 [ "$SWITCH_RC" = 5 ] && echo "Aviso: pm2 save falló; tras un reinicio del VPS revisar con pm2 list."
 echo "Detalle: $(winlog)"
