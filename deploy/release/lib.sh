@@ -142,10 +142,11 @@ stage_label() {
     vps) echo "Comprobaciones VPS" ;;
     variables) echo "Variables públicas" ;;
     migraciones) echo "Migraciones" ;;
-    aprobacion) echo "Consulta de aprobación previa" ;;
+    aprobacion) echo "Aprobación previa (identidad e integridad)" ;;
     lint) echo "ESLint" ;;
     typecheck) echo "TypeScript" ;;
     tests) echo "Tests" ;;
+    integridad_aprobacion) echo "Integridad de dependencias (post-validación)" ;;
     entorno) echo "Entorno de compilación" ;;
     dependencias) echo "Dependencias (verificación/instalación)" ;;
     next_build) echo "Next.js build" ;;
@@ -166,14 +167,15 @@ stage_label() {
 
 # ── Aprobación de validaciones (lint + typecheck + tests) por commit ──────────
 # Se reutiliza sólo si TODA la identidad coincide; cualquier duda => validación completa.
-APPROVAL_SCHEMA=1
+APPROVAL_SCHEMA=2
 VALIDATION_SPEC='lint=npm run lint|typecheck=npm run typecheck|tests=npm test'
 sha256_of() { sha256sum | cut -d' ' -f1; }
 
 # approval_identity <repo> <sha>: líneas clave=valor que determinan el resultado de las validaciones.
 # Los secretos sólo intervienen como hash. Falla si algún dato no se puede determinar.
+# dependencias_contenido ata la aprobación al contenido real de node_modules con el que se validó.
 approval_identity() {
-  local repo="$1" sha="$2" tree lock deps env_local node_v npm_v
+  local repo="$1" sha="$2" tree lock deps deps_content env_local node_v npm_v
   is_sha "$sha" || return 1
   node_v="$(node -v 2>/dev/null)" && [ -n "$node_v" ] || return 1
   npm_v="$(npm -v 2>/dev/null)" && [ -n "$npm_v" ] || return 1
@@ -182,6 +184,7 @@ approval_identity() {
   lock="$(git -C "$repo" show "$sha:package-lock.json" | sha256_of)" || return 1
   [ -f "$repo/node_modules/.package-lock.json" ] || return 1
   deps="$(sha256_of < "$repo/node_modules/.package-lock.json")"
+  deps_content="$(deps_fingerprint "$repo")" || return 1
   [ -f "$repo/.env.local" ] || return 1
   env_local="$(tr -d '\r' < "$repo/.env.local" | sha256_of)"
   printf 'esquema=%s\n' "$APPROVAL_SCHEMA"
@@ -189,6 +192,7 @@ approval_identity() {
   printf 'arbol=%s\n' "$tree"
   printf 'package_lock=%s\n' "$lock"
   printf 'dependencias_instaladas=%s\n' "$deps"
+  printf 'dependencias_contenido=%s\n' "$deps_content"
   printf 'node=%s\n' "$node_v"
   printf 'npm=%s\n' "$npm_v"
   printf 'plataforma=%s\n' "$(uname -sm)"
@@ -228,23 +232,39 @@ approval_revoke() { rm -f -- "$(approval_file "$1" "$2")"; }
 approval_save() {
   local f tmp body
   mkdir -p "$1" || return 1
-  f="$(approval_file "$1" "$2")"; tmp="$f.tmp.$$"
+  f="$(approval_file "$1" "$2")"
+  # Temporal único por escritura ($$ es el mismo en subshells concurrentes).
+  tmp="$(mktemp "$f.tmp.XXXXXX")" || return 1
   body="$(printf '%s\nresultado=aprobado\naprobado_en=%s\nlog=%s' "$3" "$(date -Is)" "$4")"
-  { printf '%s\n' "$body"; printf 'control=%s\n' "$(printf '%s\n' "$body" | sha256_of)"; } > "$tmp" && mv -f -- "$tmp" "$f"
+  { printf '%s\n' "$body"; printf 'control=%s\n' "$(printf '%s\n' "$body" | sha256_of)"; } > "$tmp" && mv -f -- "$tmp" "$f" \
+    || { rm -f -- "$tmp"; return 1; }
+}
+
+# ── Integridad de dependencias instaladas ──────────────────────────────────────
+# deps_fingerprint <dir-con-node_modules>: huella por CONTENIDO (sha256 de cada archivo, enlaces y sus
+# destinos, directorios; ver deps-fingerprint.mjs). Imprime "<sha256> archivos=N enlaces=N bytes=N" o
+# falla sin imprimir nada si la integridad no se pudo comprobar por completo (nunca una huella parcial).
+DEPS_FINGERPRINT_RE='^[0-9a-f]{64} archivos=[0-9]+ enlaces=[0-9]+ bytes=[0-9]+$'
+deps_fingerprint() {
+  local out
+  [ -d "$1/node_modules" ] && [ ! -L "$1/node_modules" ] || return 1
+  out="$(node "$DEPLOY_LIB_DIR/deps-fingerprint.mjs" "$1/node_modules" 2>/dev/null)" || return 1
+  [[ "$out" =~ $DEPS_FINGERPRINT_RE ]] || return 1
+  printf '%s\n' "$out"
 }
 
 # ── Entorno de compilación persistente (PC) ────────────────────────────────────
-# Identidad de las dependencias: package-lock del COMMIT + herramientas.
+# Identidad de las dependencias: package-lock y package.json del COMMIT (npm ci exige que coincidan y
+# ejecuta los scripts de instalación del package.json) + herramientas.
+DEPS_STAMP_SCHEMA=2
 deps_key() { # <repo> <sha>
-  local lock
-  local lock node_v npm_v
+  local lock pkg node_v npm_v
   git -C "$1" cat-file -e "$2:package-lock.json" 2>/dev/null || return 1
+  git -C "$1" cat-file -e "$2:package.json" 2>/dev/null || return 1
   lock="$(git -C "$1" show "$2:package-lock.json" | sha256_of)" && [ -n "$lock" ] || return 1
+  pkg="$(git -C "$1" show "$2:package.json" | sha256_of)" && [ -n "$pkg" ] || return 1
   node_v="$(node -v 2>/dev/null)" && [ -n "$node_v" ] || return 1
   npm_v="$(npm -v 2>/dev/null)" && [ -n "$npm_v" ] || return 1
-  printf 'lock=%s node=%s npm=%s plataforma=%s\n' "$lock" "$node_v" "$npm_v" "$(uname -sm | tr ' ' _)"
-}
-# Huella de node_modules (rutas + tamaños; excluye cachés): detecta archivos borrados, agregados o truncados.
-deps_fingerprint() { # <dir-con-node_modules>
-  (cd "$1" && [ -d node_modules ] && find node_modules -path node_modules/.cache -prune -o -type f -printf '%P\t%s\n' | LC_ALL=C sort | sha256_of)
+  printf 'esquema=%s lock=%s package=%s node=%s npm=%s plataforma=%s\n' \
+    "$DEPS_STAMP_SCHEMA" "$lock" "$pkg" "$node_v" "$npm_v" "$(uname -sm | tr ' ' _)"
 }

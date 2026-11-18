@@ -64,7 +64,8 @@ enmascaradas) y otro en el VPS en `~/apps/beyonix-releases/.deploy-logs/`.
 Si lint, typecheck y tests pasan, se guarda `Documentos\BEYONIX-backups\deploy-approvals\<sha>.aprobacion`
 con la identidad de lo validado:
 - SHA y árbol del commit, y su `package-lock`;
-- dependencias instaladas en el repo (`node_modules/.package-lock.json`);
+- dependencias instaladas en el repo: `node_modules/.package-lock.json` y la **huella por contenido**
+  de todo `node_modules` (sha256 de cada archivo, enlaces y sus destinos, directorios);
 - versiones de node y npm, y la plataforma;
 - hash del `.env.local` (nunca su contenido);
 - `NODE_OPTIONS`, `NODE_ENV`, `TZ` y `CI`;
@@ -75,8 +76,11 @@ Una línea `control=` (sha256 del resto) detecta ediciones o archivos truncados.
 Se reutiliza **sólo** si el archivo está íntegro, dice `resultado=aprobado` y coincide TODA la
 identidad. Ante cualquier diferencia o duda se valida completo, y el log dice qué cambió.
 - Antes de validar se borra la aprobación del commit.
-- Se escribe sólo si las tres pasan y la identidad no cambió mientras tanto, así que una validación
-  fallida o interrumpida nunca deja aprobación.
+- Se escribe sólo si las tres pasan y la identidad (incluido el contenido de `node_modules`) no cambió
+  mientras tanto, así que una validación fallida o interrumpida, o dependencias alteradas durante la
+  validación, nunca dejan aprobación.
+- Si la integridad de `node_modules` no se puede comprobar (archivo ilegible, enlace hacia fuera de
+  `node_modules`, cálculo interrumpido), la identidad queda indeterminada y se valida completo.
 - `-ValidacionCompleta` ignora la aprobación existente.
 - La reutilización queda registrada en el log.
 
@@ -89,9 +93,15 @@ tiene su propio bloqueo, y uno abandonado por un cierre forzado se recupera. En 
 
 1. Se borra todo menos `node_modules` (y su `.cache`): no quedan fuentes, `.next` ni `.env.local` previos.
 2. Se extrae el árbol exacto del commit (`git archive`).
-3. Dependencias: se reutilizan si `deps.stamp` coincide con el `package-lock` **del commit**, node,
-   npm y plataforma, y la huella de `node_modules` (rutas y tamaños) no cambió. Si no, se corre
-   `npm ci` limpio desde ese lock (máx. 30 min). El sello se borra antes y se escribe sólo si termina bien.
+3. Dependencias: se reutilizan si `deps.stamp` coincide con el `package-lock` y el `package.json`
+   **del commit** (npm ci exige que coincidan y ejecuta sus scripts de instalación), node, npm y
+   plataforma, y la huella por contenido de `node_modules` es idéntica a la registrada al instalar
+   (`deps-fingerprint.mjs`: sha256 de cada archivo, enlaces con su destino, directorios; detecta
+   archivos modificados aunque conserven tamaño y fecha, agregados, borrados y enlaces cambiados).
+   Si no coincide, el sello está incompleto o la integridad no se puede comprobar, se corre `npm ci`
+   limpio desde ese lock (máx. 30 min). El sello se borra antes y se escribe sólo si termina bien y
+   la huella se calculó completa. Costo medido de la verificación: ~9-15 s en caliente (37 mil
+   archivos, 890 MB); más la primera vez tras reiniciar la PC.
 4. `.env.local` se copia sólo durante el build y se borra siempre, también si se interrumpe. Se
    rechaza un `.next` que contenga archivos `.env`.
 5. Se empaqueta `.next` con su manifest y se vuelve a limpiar el entorno.
@@ -171,6 +181,7 @@ tar -C deploy/release -c remote-lib.sh remote-switch.sh remote-rollback.sh remot
 | `lib.sh` | PC | Validación de argumentos, migraciones, timeout con árbol de procesos, espera ante cortes. |
 | `kill-process-tree.ps1` | PC | Termina el árbol de procesos de los tests (sólo esa ejecución). |
 | `local-build.sh` | PC | Compila el commit en el entorno persistente (dependencias reutilizadas o `npm ci`) y empaqueta `.next`. |
+| `deps-fingerprint.mjs` | PC | Huella de integridad por contenido de `node_modules` (entorno de compilación y aprobaciones). |
 | `remote-lib.sh` | VPS | Base común: PM2, salud, enlace, bloqueo, validación de releases. |
 | `remote-status.sh` | VPS | Estado de producción (sólo lectura). |
 | `remote-assemble.sh` | VPS | Arma la release nueva (npm ci con memoria limitada) y la prueba en el 3001. |

@@ -2,7 +2,8 @@
 # PC (Git Bash) — Compila el commit en un entorno de compilación persistente y exclusivo, fuera del
 # repo, y empaqueta el .next. No toca el VPS ni la base de datos; del repo sólo lee (git archive,
 # .env.local). Las dependencias se instalan con `npm ci` desde el package-lock DEL COMMIT y se
-# reutilizan mientras no cambien el lock, node, npm ni la plataforma, y su huella siga intacta.
+# reutilizan mientras no cambien el lock, el package.json, node, npm ni la plataforma, y su
+# contenido (huella sha256 de cada archivo y enlace) siga idéntico al instalado.
 # Uso: bash local-build.sh <sha-completo> <repo> <dir-salida> <dir-entorno>
 # Emite "tiempo <etapa>=<ms>". Última línea si todo pasa: LISTO artefacto=<dir> build_id=<id>
 set -euo pipefail
@@ -74,10 +75,17 @@ lap entorno
 key="$(deps_key "$REPO" "$SHA")" || fail "no se pudo calcular la identidad de las dependencias"
 reuse=0
 if [ -f "$STAMP" ] && [ -d "$WORK/node_modules" ]; then
-  if [ "$(sed -n 's/^key=//p' "$STAMP")" != "$key" ]; then
-    echo "dependencias: cambió package-lock o herramientas => reinstalar"
-  elif [ "$(sed -n 's/^huella=//p' "$STAMP")" != "$(deps_fingerprint "$WORK")" ]; then
-    echo "dependencias: node_modules alterado o incompleto => reinstalar"
+  stamp_key="$(sed -n 's/^key=//p' "$STAMP")"
+  stamp_print="$(sed -n 's/^huella=//p' "$STAMP")"
+  if [ "$(grep -c '^key=' "$STAMP")" != 1 ] || [ "$(grep -c '^huella=' "$STAMP")" != 1 ] \
+     || ! [[ "$stamp_print" =~ $DEPS_FINGERPRINT_RE ]]; then
+    echo "dependencias: sello incompleto o corrupto => reinstalar"
+  elif [ "$stamp_key" != "$key" ]; then
+    echo "dependencias: cambió package-lock, package.json o herramientas => reinstalar"
+  elif ! current_print="$(deps_fingerprint "$WORK")"; then
+    echo "dependencias: no se pudo comprobar la integridad de node_modules => reinstalar"
+  elif [ "$stamp_print" != "$current_print" ]; then
+    echo "dependencias: node_modules alterado o incompleto (contenido distinto) => reinstalar"
   else
     reuse=1
   fi
@@ -93,10 +101,16 @@ else
   run_with_tree_timeout 1800 "$A/npm-ci.log" bash -c 'cd "$1" && npm ci --no-audit --no-fund --loglevel=error' _ "$WORK" \
     || { tail -20 "$A/npm-ci.log"; fail "npm ci falló o superó 30 min"; }
   rm -rf -- "$WORK/node_modules/.cache"
-  printf 'key=%s\nhuella=%s\ninstalado_en=%s\n' "$key" "$(deps_fingerprint "$WORK")" "$(date -Is)" > "$STAMP.tmp"
-  mv -f -- "$STAMP.tmp" "$STAMP"
+  # Sin huella completa no hay sello: la próxima compilación reinstala (nunca se reutiliza sin verificar).
+  if installed_print="$(deps_fingerprint "$WORK")"; then
+    printf 'key=%s\nhuella=%s\ninstalado_en=%s\n' "$key" "$installed_print" "$(date -Is)" > "$STAMP.tmp"
+    mv -f -- "$STAMP.tmp" "$STAMP"
+  else
+    echo "AVISO: no se pudo calcular la integridad de node_modules; no se guarda sello (se reinstalará)"
+  fi
   echo "dependencias=instaladas con npm ci ($key)"
 fi
+echo "integridad_dependencias=${installed_print:-${current_print:-no calculada}}"
 lap dependencias
 
 # .env.local sólo durante el build (las NEXT_PUBLIC_* ya se compararon con las del VPS); se borra siempre.

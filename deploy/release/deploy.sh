@@ -269,12 +269,17 @@ else
     *) abort "fallaron tests" ;;
   esac
   t_end tests
-  # Se aprueba sólo si la identidad no cambió mientras se validaba (p. ej. un npm install en paralelo).
-  if [ -n "$IDENTITY" ] && [ "$(approval_identity "$REPO" "$SHA" 2>/dev/null)" = "$IDENTITY" ]; then
+  # Se aprueba sólo si la identidad (incluido el contenido de node_modules) no cambió mientras se
+  # validaba (p. ej. un npm install o una edición en paralelo): así la aprobación corresponde a las
+  # dependencias realmente usadas por lint, typecheck y tests.
+  AFTER_IDENTITY="$(approval_identity "$REPO" "$SHA" 2>/dev/null)" || AFTER_IDENTITY=""
+  t_end integridad_aprobacion
+  if [ -n "$IDENTITY" ] && [ "$AFTER_IDENTITY" = "$IDENTITY" ]; then
     if approval_save "$APPROVALS" "$SHA" "$IDENTITY" "$(winlog)"; then log "aprobación guardada: $APPROVAL_FILE"
     else log "AVISO: no se pudo guardar la aprobación (el próximo despliegue validará completo)"; fi
   else
-    log "AVISO: la identidad cambió durante la validación; no se guarda aprobación"
+    changed="$(diff <(printf '%s\n' "$IDENTITY") <(printf '%s\n' "$AFTER_IDENTITY") | sed -nE 's/^[<>] ([a-z_]+)=.*/\1/p' | sort -u | tr '\n' ' ')"
+    log "AVISO: la identidad cambió o no se pudo recalcular durante la validación (${changed:-indeterminada}); no se guarda aprobación"
   fi
 fi
 
