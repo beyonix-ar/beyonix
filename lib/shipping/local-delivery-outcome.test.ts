@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import {
+  isLocalDeliveryArrivingToday,
   createLocalDeliveryAccessToken,
   CourierActionRequestError,
   describeAdminLocalDeliveryReservation,
@@ -116,4 +117,39 @@ test("fechas en hora de BEYONIX y estado de la reserva en Admin", () => {
 test("configuración: días de reserva por devolución, enteros de 1 a 30", () => {
   for (const valid of [1, 3, 30]) assert.equal(normalizeLocalDeliveryReservationDays(valid), valid)
   for (const invalid of [0, 31, 2.5, -1, "3", null, Number.NaN]) assert.equal(normalizeLocalDeliveryReservationDays(invalid), null)
+})
+
+// ── "¡Llega hoy!" y corrección de "Entregado al cadete" ─────────────────────
+
+const NOW = Date.parse("2026-11-23T15:00:00-03:00")
+const arriving = (overrides: Record<string, unknown> = {}, outcome: Record<string, unknown> | null = {}) => ({
+  estado: "en_camino", cancelled_at: null, delivered_at: null, financial_status: "payment_confirmed",
+  local_delivery_outcome: outcome === null ? null : { status: "pending" as const, failedAttempts: 0, reservation: null, inTransitAt: "2026-11-23T10:30:00-03:00", ...outcome },
+  ...overrides,
+})
+
+test("¡Llega hoy!: sólo En camino con salida HOY (hora de BEYONIX) y sin resultado del cadete", () => {
+  assert.equal(isLocalDeliveryArrivingToday(arriving(), NOW), true)
+  // 00:30 del 23/11 en Argentina es todavía el 23 (aunque en UTC sea 03:30 del 23).
+  assert.equal(isLocalDeliveryArrivingToday(arriving({}, { inTransitAt: "2026-11-23T00:30:00-03:00" }), NOW), true)
+  // Salió ayer (23:50 del 22/11 en Argentina = 02:50 UTC del 23): ya no se promete hoy.
+  assert.equal(isLocalDeliveryArrivingToday(arriving({}, { inTransitAt: "2026-11-23T02:50:00Z" }), NOW), false)
+  assert.equal(isLocalDeliveryArrivingToday(arriving({}, { inTransitAt: "2026-11-22T18:00:00-03:00" }), NOW), false)
+})
+
+test("¡Llega hoy!: nunca antes del cadete, entregado, cancelado, con reintegro, con novedad del cadete o sin salida vigente", () => {
+  for (const estado of ["pagado", "preparado", "entregado", "cancelado"]) assert.equal(isLocalDeliveryArrivingToday(arriving({ estado }), NOW), false, estado)
+  assert.equal(isLocalDeliveryArrivingToday(arriving({ cancelled_at: "2026-11-23T11:00:00-03:00" }), NOW), false)
+  assert.equal(isLocalDeliveryArrivingToday(arriving({ delivered_at: "2026-11-23T12:00:00-03:00" }), NOW), false)
+  for (const financial of ["cancellation_requested", "refund_pending", "refunded", "cancelled"]) {
+    assert.equal(isLocalDeliveryArrivingToday(arriving({ financial_status: financial }), NOW), false, financial)
+  }
+  for (const status of ["first_attempt_failed", "incident", "returning", "returned", "delivered"]) {
+    assert.equal(isLocalDeliveryArrivingToday(arriving({}, { status }), NOW), false, status)
+  }
+  assert.equal(isLocalDeliveryArrivingToday(arriving({}, { failedAttempts: 1 }), NOW), false)
+  // Corrección de Admin: sin registro de En camino vigente no se promete nada.
+  assert.equal(isLocalDeliveryArrivingToday(arriving({}, { inTransitAt: null }), NOW), false)
+  assert.equal(isLocalDeliveryArrivingToday(arriving({}, null), NOW), false)
+  assert.equal(isLocalDeliveryArrivingToday(arriving({}, { inTransitAt: "fecha-rota" }), NOW), false)
 })

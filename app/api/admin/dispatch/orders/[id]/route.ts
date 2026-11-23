@@ -6,6 +6,7 @@ import { createDispatchAndreaniShipment } from "@/lib/andreani/dispatch-shipment
 import { quoteOrderParcels } from "@/lib/andreani/parcel-quote"
 import { DISPATCH_ADJUSTMENT_PROBLEMS, DISPATCH_ADJUSTMENT_SETTLEMENTS, DISPATCH_ORDER_ACTIONS, dispatchActionProviderError, dispatchError, getOrderDispatch, isRequestKey, validId, type DispatchLabelConfirmation, type DispatchOrderAction, type DispatchScanResult, type LocalParcelConfirmation } from "@/lib/admin/dispatch"
 import { isLocalDeliveryOrder } from "@/lib/shipping/local-delivery"
+import { loadLocalDeliveryRevertable } from "@/lib/orders/local-delivery-outcomes-server"
 import { parseParcelMeasures, ParcelMeasuresError } from "@/lib/shipping/parcel-measures"
 
 type Context = { params: Promise<{ id: string }> }
@@ -20,14 +21,18 @@ const canSeeCosts = (role: string | null | undefined) => role === "admin" || rol
 
 /** Qué puede hacer quien mira el pedido. Toda regla se vuelve a validar al ejecutar. */
 function viewerFor(role: string | null | undefined) {
-  return { costsVisible: canSeeCosts(role), canShip: canSeeCosts(role), canForce: role === "super_admin" }
+  // canCorrectLocalDispatch: Envío BEYONIX ya entregado al cadete (reimprimir etiquetas y corregir la entrega).
+  return { costsVisible: canSeeCosts(role), canShip: canSeeCosts(role), canForce: role === "super_admin", canCorrectLocalDispatch: canSeeCosts(role) }
 }
 
 async function detailResponse(auth: Exclude<Awaited<ReturnType<typeof requireOperator>>, { error: Response }>, id: number, extra: Record<string, unknown> = {}) {
   const detail = await getOrderDispatch(auth.admin, id, { includeCosts: canSeeCosts(auth.profile.rol) })
-  return detail
-    ? Response.json({ ...detail, viewer: viewerFor(auth.profile.rol), ...extra }, { headers: { "Cache-Control": "no-store" } })
-    : Response.json({ error: "Pedido no encontrado." }, { status: 404 })
+  if (!detail) return Response.json({ error: "Pedido no encontrado." }, { status: 404 })
+  const viewer = viewerFor(auth.profile.rol)
+  // "Corregir entrega al cadete": la misma regla que aplica la base al ejecutarla.
+  const canRevertLocalHandover = viewer.canCorrectLocalDispatch && Boolean(detail.localDelivery) && detail.order.estado === "en_camino"
+    && (await loadLocalDeliveryRevertable(auth.admin, [id])).has(id)
+  return Response.json({ ...detail, viewer: { ...viewer, canRevertLocalHandover }, ...extra }, { headers: { "Cache-Control": "no-store" } })
 }
 
 export async function GET(request: Request, context: Context) {

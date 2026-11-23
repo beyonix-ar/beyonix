@@ -107,6 +107,30 @@ export function parseLocalDeliveryEffectRecord(metadata: unknown, createdAt: str
   }
 }
 
+/** Corrección administrativa de "Entregado al cadete" (revert_local_delivery_in_transit). */
+export const LOCAL_DELIVERY_IN_TRANSIT_REVERTED_ACTION = "local_delivery_in_transit_reverted"
+/** Registro atómico de la salida con el cadete (mark_local_delivery_in_transit): hora real y estado de origen. */
+export const LOCAL_DELIVERY_IN_TRANSIT_MARKED_ACTION = "local_delivery_in_transit_marked"
+
+/**
+ * Marcas de efectos del ciclo vigente. Una corrección de "Entregado al
+ * cadete" anula el registro de En camino anterior: la próxima salida vuelve a
+ * quedar en el historial. El email de En camino ya enviado sigue contando
+ * (nunca se reenvía por una corrección interna).
+ */
+export function currentLocalDeliveryEffectRecords(
+  rows: ReadonlyArray<{ action?: string | null; metadata: unknown; created_at: string }>,
+): LocalDeliveryEffectRecord[] {
+  const lastRevertMs = Math.max(Number.NEGATIVE_INFINITY, ...rows
+    .filter((row) => row.action === LOCAL_DELIVERY_IN_TRANSIT_REVERTED_ACTION)
+    .map((row) => Date.parse(row.created_at))
+    .filter(Number.isFinite))
+  return rows
+    .map((row) => parseLocalDeliveryEffectRecord(row.metadata, row.created_at))
+    .filter((record): record is LocalDeliveryEffectRecord => record !== null)
+    .filter((record) => record.effect !== "in_transit_status" || Date.parse(record.createdAt) > lastRevertMs)
+}
+
 type ActiveReservation = { attemptId: string; createdAt: string }
 
 /**

@@ -64,12 +64,21 @@ const orders = {
   622: base(622, { shipping_provider: "beyonix", estado: "en_camino", dispatch_cutoff_reached: true, local_delivery_outcome: { status: "returning", failedAttempts: 2, reservation: null } }),
   623: base(623, { shipping_provider: "beyonix", estado: "en_camino", dispatch_cutoff_reached: true, local_delivery_outcome: { status: "returned", failedAttempts: 2, reservation: { status: "active", expiresAt: "2026-11-09T03:00:00.000Z" } } }),
   624: base(624, { shipping_provider: "beyonix", estado: "en_camino", dispatch_cutoff_reached: true, local_delivery_outcome: { status: "returned", failedAttempts: 2, reservation: { status: "expired", expiresAt: "2026-11-03T03:00:00.000Z" } } }),
+  // "¡Llega hoy!": salió hoy con el cadete (server_now 04/11 13:00 en Argentina) / salió ayer / salida anulada por una corrección de Admin.
+  625: base(625, { shipping_provider: "beyonix", estado: "en_camino", dispatch_cutoff_reached: true, local_delivery_outcome: { status: "pending", failedAttempts: 0, reservation: null, inTransitAt: "2026-11-04T12:30:00Z" } }),
+  626: base(626, { shipping_provider: "beyonix", estado: "en_camino", dispatch_cutoff_reached: true, local_delivery_outcome: { status: "pending", failedAttempts: 0, reservation: null, inTransitAt: "2026-11-03T20:00:00Z" } }),
+  // Abierta a las 23:50 en Argentina (04/11) con salida de ese día: al pasar la medianoche deja de prometer.
+  628: base(628, { shipping_provider: "beyonix", estado: "en_camino", dispatch_cutoff_reached: true, local_delivery_outcome: { status: "pending", failedAttempts: 0, reservation: null, inTransitAt: "2026-11-04T20:00:00Z" } }),
+  627: base(627, { shipping_provider: "beyonix", estado: "pagado", dispatch_cutoff_reached: false, local_delivery_outcome: { status: "pending", failedAttempts: 0, reservation: null, inTransitAt: null } }),
 }
+const SERVER_NOW = { 628: "2026-11-05T02:50:00Z" }
+window.__fetches = 0
 window.fetch = async (input) => {
+  window.__fetches += 1
   const url = String(input)
   if (url === "/api/orders") return Response.json({ server_now: "2026-11-04T16:00:00Z", orders: Object.values(orders) })
   const match = url.match(/^\\/api\\/orders\\/(\\d+)$/)
-  if (match && orders[match[1]]) return Response.json({ order: orders[match[1]], server_now: "2026-11-04T16:00:00Z" })
+  if (match && orders[match[1]]) return Response.json({ order: orders[match[1]], server_now: SERVER_NOW[match[1]] ?? "2026-11-04T16:00:00Z" })
   if (/\\/claims$/.test(url)) return Response.json({ claims: [] })
   return Response.json({ error: "Sin datos" }, { status: 404 })
 }
@@ -101,7 +110,7 @@ test.before(async () => {
 
 test.after(async () => { await browser?.close() })
 
-async function open(query: string, theme: "dark" | "light", width: number, ready: string): Promise<{ page: Page; errors: string[] }> {
+async function open(query: string, theme: "dark" | "light", width: number, ready: string, beforeLoad?: (page: Page) => Promise<void>): Promise<{ page: Page; errors: string[] }> {
   const page = await browser.newPage({ viewport: { width, height: 1000 } })
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.message))
@@ -115,6 +124,7 @@ async function open(query: string, theme: "dark" | "light", width: number, ready
     if (url.startsWith("http://localhost/_next/image")) return route.fulfill({ contentType: "image/png", body: Buffer.from(EMPTY_PNG, "base64") })
     return route.abort()
   })
+  await beforeLoad?.(page)
   await page.goto(`http://localhost/cuenta?${query}`)
   await page.getByText(ready).first().waitFor({ timeout: 15000 }).catch(async (error) => {
     throw new Error(`${error}\nerrores: ${errors.join(" | ")}\ntexto: ${(await page.locator("body").innerText()).slice(0, 600)}`)
@@ -276,4 +286,58 @@ test("Mis compras: la tarjeta muestra el estado del resultado local (intento fal
     assert.deepEqual(errors, [])
     if (screenshotsDir) await page.screenshot({ path: join(screenshotsDir, "cuenta-mis-compras-resultado-local.png"), fullPage: true })
   } finally { await page.close() }
+})
+
+test("Gestión del pedido: '¡Llega hoy!' sólo con Envío BEYONIX que salió hoy con el cadete y sin novedades", async () => {
+  const cases: Array<[number, boolean]> = [
+    [625, true], // En camino, salió hoy
+    [626, false], // salió ayer: ya no se promete hoy
+    [627, false], // Admin corrigió la entrega al cadete: vuelve a preparación
+    [602, false], // En camino sin registro de salida conocido
+    [621, false], // primer intento fallido
+    [601, false], // preparando
+    [603, false], // entregado
+    [611, false], // Andreani
+  ]
+  for (const [orderId, expected] of cases) {
+    for (const [theme, width] of [["light", 1280], ["dark", 390]] as const) {
+      const { page, errors } = await open(`order=${orderId}`, theme, width, "Productos comprados")
+      try {
+        const badge = page.locator("[data-local-delivery-arrives-today]")
+        assert.equal(await badge.count(), expected ? 1 : 0, `${orderId} ${theme} ${width}`)
+        if (expected) {
+          assert.equal((await badge.innerText()).trim(), "¡Llega hoy!")
+          const section = page.locator("section.customer-order-management")
+          assert.match(await section.innerText(), /Gestión del pedido[\s\S]*¡Llega hoy![\s\S]*Envío BEYONIX: entrega local/)
+          // Sin desbordes en teléfono.
+          const overflow = await section.evaluate((node) => node.scrollWidth - node.clientWidth)
+          assert.ok(overflow <= 1, `sin desborde (${overflow}px)`)
+        }
+        assert.deepEqual(errors, [])
+        if (screenshotsDir && expected) await page.screenshot({ path: join(screenshotsDir, `cuenta-beyonix-llega-hoy-${theme}-${width}.png`), fullPage: true })
+      } finally { await page.close() }
+    }
+  }
+})
+
+test("'¡Llega hoy!' con la página abierta: desaparece sola al pasar la medianoche de Argentina, sin recargar", async () => {
+  for (const [theme, width] of [["light", 1280], ["dark", 390]] as const) {
+    // Dispositivo y servidor coinciden: 04/11 23:50 en Argentina.
+    const { page, errors } = await open("order=628", theme, width, "Productos comprados",
+      (target) => target.clock.install({ time: new Date("2026-11-05T02:50:00Z") }))
+    try {
+      const badge = page.locator("[data-local-delivery-arrives-today]")
+      assert.equal(await badge.count(), 1, "salió hoy: se promete")
+      const fetches = await page.evaluate("window.__fetches") as number
+      // 23:52: sigue siendo el mismo día.
+      await page.clock.fastForward("02:00")
+      assert.equal(await badge.count(), 1, "antes de la medianoche sigue")
+      // 00:05 del 05/11: ya no es "hoy".
+      await page.clock.fastForward("13:00")
+      await badge.waitFor({ state: "detached", timeout: 5000 })
+      assert.match(await page.locator("section.customer-order-management").innerText(), /Envío BEYONIX: entrega local/, "el resto de la gestión sigue igual")
+      assert.equal(await page.evaluate("window.__fetches"), fetches, "sin recargar ni volver a pedir datos")
+      assert.deepEqual(errors, [])
+    } finally { await page.close() }
+  }
 })

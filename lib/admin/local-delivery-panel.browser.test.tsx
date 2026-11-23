@@ -28,14 +28,33 @@ const orders = [
 // Efectos pendientes: el cron los reintenta solo; "Reintentar avisos" queda como recuperación manual.
 const pending = { 13: ["delivered_email"], 15: ["delivered_email"] }
 const exhausted = { 15: ["delivered_email"] }
+// QR emitido y sin resultado del cadete (el 12 está En camino).
+const outcomes = { 12: { status: "pending", failedAttempts: 0, firstAttemptFailedAt: null, secondAttemptFailedAt: null, incident: null, returningAt: null, returnedAt: null, reservation: null, returnParcels: null } }
+const adminViewer = new URLSearchParams(location.search).get("role") === "admin"
+// Regla de la base (local_delivery_revert_blockers): tras "Problema" + "Reintentar entrega" el
+// resultado vuelve a pendiente sin intentos, pero la corrección ya no corresponde.
+const serverBlocked = new Set(new URLSearchParams(location.search).get("retried") ? [12] : [])
+// http://admin.test no es contexto seguro: sin crypto.randomUUID (en el Admin real sí existe).
+let keys = 0
+if (!globalThis.crypto.randomUUID) globalThis.crypto.randomUUID = () => "30000000-0000-4000-8000-" + String(++keys).padStart(12, "0")
 window.__posts = []
 window.confirm = () => true
 window.fetch = async (input, init) => {
+  if (/\\/api\\/admin\\/dispatch\\/orders\\/\\d+\\/courier-qr$/.test(String(input))) {
+    window.__posts.push({ path: String(input) })
+    return Response.json({ orderCode: "BX-1012", url: "https://beyonix.com.ar/delivery/q8Jv2mN4pT7xR1sK9wZ3bH6cY0dF5gLe", courierCanAct: true, screen: "actions" })
+  }
   if (String(input) !== "/api/admin/dispatch/local") return Response.json({}, { status: 404 })
   if (init && init.method === "POST") {
     const body = JSON.parse(init.body)
     window.__posts.push(body)
     if (body.action === "retry_effects") { pending[body.orderId] = []; exhausted[body.orderId] = []; return Response.json({ ok: true, pendingEffects: [] }) }
+    if (body.action === "revert_in_transit") {
+      if (!adminViewer) return Response.json({ error: "Sólo un Admin o Super Admin puede corregir la entrega al cadete." }, { status: 403 })
+      const reverted = orders.find((item) => item.id === body.orderId)
+      reverted.estado = "pagado"
+      return Response.json({ ok: true, order: { id: body.orderId, estado: "pagado", stage: "preparing" } })
+    }
     const order = orders.find((item) => item.id === body.orderId)
     const error = getLocalDeliveryTransitionError(order, body.action)
     if (error) return Response.json({ error }, { status: 409 })
@@ -43,7 +62,7 @@ window.fetch = async (input, init) => {
     if (body.action === "entregado") order.delivered_at = "2026-11-03T15:00:00Z"
     return Response.json({ ok: true })
   }
-  return Response.json({ orders: orders.map((order) => ({ ...order, stage: getLocalDeliveryStage(order), pendingEffects: pending[order.id] ?? [], exhaustedEffects: exhausted[order.id] ?? [] })) })
+  return Response.json({ viewer: { canRevertHandover: adminViewer }, orders: orders.map((order) => ({ ...order, stage: getLocalDeliveryStage(order), outcome: order.estado === "en_camino" ? outcomes[order.id] ?? null : null, canRevertHandover: adminViewer && order.estado === "en_camino" && !serverBlocked.has(order.id), pendingEffects: pending[order.id] ?? [], exhaustedEffects: exhausted[order.id] ?? [] })) })
 }
 createRoot(document.getElementById("root")).render(createElement(LocalDeliveryPanel))
 `
@@ -137,3 +156,72 @@ for (const theme of ["dark", "light"] as const) for (const width of [390, 1280])
     }
   })
 }
+
+for (const [role, theme, width] of [["admin", "dark", 390], ["admin", "light", 1280], ["operador", "dark", 1280]] as const) {
+  test(role + " " + theme + " " + width + "px: En camino ofrece el QR del cadete; sólo Admin corrige la entrega al cadete, con motivo", async () => {
+    const page = await browser.newPage({ viewport: { width, height: 900 } })
+    const errors: string[] = []
+    page.on("pageerror", (error) => errors.push(error.message))
+    try {
+      await page.route("**/*", (route) =>
+        route.request().url().startsWith("http://admin.test/")
+          ? route.fulfill({ contentType: "text/html; charset=utf-8", body: adminPageHtml(theme, css, bundle) })
+          : route.abort(),
+      )
+      await page.goto("http://admin.test/?role=" + role)
+      const panel = page.locator("[data-local-delivery-panel]")
+      await panel.getByText("Entregas locales · Envío BEYONIX").waitFor({ timeout: 10_000 })
+      const order = (id: number) => panel.locator("[data-local-delivery-order='" + id + "']")
+      // QR del cadete: sólo En camino con QR emitido.
+      assert.equal(await order(12).locator("[data-local-delivery-qr]").count(), 1)
+      assert.equal(await order(11).locator("[data-local-delivery-qr]").count(), 0, "Preparando: el QR está en las etiquetas")
+      await order(12).getByRole("button", { name: "QR del cadete de BX-1012" }).click()
+      await page.locator("[data-courier-qr-image]").waitFor()
+      await page.getByRole("button", { name: "Cerrar" }).last().click()
+
+      const revert = order(12).getByRole("button", { name: "Corregir entrega al cadete" })
+      assert.equal(await panel.getByRole("button", { name: "Corregir entrega al cadete" }).count(), role === "admin" ? 1 : 0, "sólo el pedido En camino y sólo Admin")
+      if (role === "admin") {
+        await revert.click()
+        const confirm = page.getByRole("button", { name: "Confirmar corrección" })
+        assert.equal(await confirm.isDisabled(), true, "motivo obligatorio")
+        await page.getByRole("textbox", { name: "Motivo obligatorio" }).fill("Se marcó por error, sigue en el depósito.")
+        await confirm.click()
+        await page.waitForFunction(() => document.querySelector("[data-local-delivery-order='12']")?.getAttribute("data-local-delivery-stage") === "preparing")
+        assert.match(await panel.locator("[data-local-delivery-notice]").innerText(), /BX-1012: entrega al cadete corregida/)
+        assert.equal(await panel.getByRole("button", { name: "Corregir entrega al cadete" }).count(), 0)
+        const posts = await page.evaluate("window.__posts") as Array<Record<string, unknown>>
+        const reverts = posts.filter((post) => post.action === "revert_in_transit")
+        assert.equal(reverts.length, 1)
+        assert.deepEqual([reverts[0].orderId, reverts[0].reason], [12, "Se marcó por error, sigue en el depósito."])
+      }
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "no se ensancha la página")
+      assert.deepEqual(errors, [])
+    } finally {
+      await page.close()
+    }
+  })
+}
+
+test("incidencia reintentada: Admin ve el QR pero no 'Corregir entrega al cadete' (el servidor la rechazaría)", async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+  const errors: string[] = []
+  page.on("pageerror", (error) => errors.push(error.message))
+  try {
+    await page.route("**/*", (route) =>
+      route.request().url().startsWith("http://admin.test/")
+        ? route.fulfill({ contentType: "text/html; charset=utf-8", body: adminPageHtml("dark", css, bundle) })
+        : route.abort(),
+    )
+    await page.goto("http://admin.test/?role=admin&retried=1")
+    const panel = page.locator("[data-local-delivery-panel]")
+    await panel.getByText("Entregas locales · Envío BEYONIX").waitFor({ timeout: 10_000 })
+    const order = panel.locator("[data-local-delivery-order='12']")
+    assert.equal(await order.getAttribute("data-local-delivery-outcome"), "pending", "el resultado volvió a pendiente")
+    assert.equal(await order.locator("[data-local-delivery-qr]").count(), 1)
+    assert.equal(await panel.getByRole("button", { name: "Corregir entrega al cadete" }).count(), 0)
+    assert.deepEqual(errors, [])
+  } finally {
+    await page.close()
+  }
+})

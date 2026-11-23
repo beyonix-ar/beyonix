@@ -5,10 +5,11 @@ import { sendOrderStateEmail } from "@/lib/orders/order-status-notifications"
 import { startPendingItemWarranties } from "@/lib/orders/warranty-activation"
 import { getLocalDeliveryStage, type LocalDeliveryOrderState, type LocalDeliveryPreparation } from "@/lib/orders/local-delivery-status"
 import {
+  currentLocalDeliveryEffectRecords,
   getExhaustedLocalDeliveryEffects,
   getMissingLocalDeliveryEffects,
   isPendingWarrantyItem,
-  parseLocalDeliveryEffectRecord,
+  LOCAL_DELIVERY_IN_TRANSIT_REVERTED_ACTION,
   summarizeLocalDeliveryEffects,
   type LocalDeliveryEffect,
   type LocalDeliveryEffectRecord,
@@ -48,7 +49,8 @@ const EMAIL_ACTION_BY_STATE: Record<LocalDeliveryEffectState, string> = {
   superseded: "local_delivery_email_superseded",
 }
 const WARRANTY_ACTION = "order_item_warranty_started"
-export const LOCAL_DELIVERY_EFFECT_ACTIONS = ["order_status_changed", WARRANTY_ACTION, ...Object.values(EMAIL_ACTION_BY_STATE)]
+// La corrección de "Entregado al cadete" se lee junto con las marcas: delimita el ciclo vigente.
+export const LOCAL_DELIVERY_EFFECT_ACTIONS = ["order_status_changed", WARRANTY_ACTION, ...Object.values(EMAIL_ACTION_BY_STATE), LOCAL_DELIVERY_IN_TRANSIT_REVERTED_ACTION]
 const WARRANTY_COLUMNS = "id,warranty_started_at,warranty_expires_at,warranty_status,warranty_months"
 // Guardas de la base que significan "el pedido cambió" (conflicto), no un error técnico.
 const CONFLICT_ERRORS = ["LOCAL_DELIVERY_PARCELS_NOT_READY", "LOCAL_DELIVERY_RETURN_IN_PROGRESS"]
@@ -106,10 +108,8 @@ export async function loadLocalPreparations(admin: LocalDeliveryAdminClient, ord
   return preparations
 }
 
-export function localDeliveryEffectRecords(rows: Array<{ metadata: unknown; created_at: string }>) {
-  return rows
-    .map((row) => parseLocalDeliveryEffectRecord(row.metadata, row.created_at))
-    .filter((record): record is LocalDeliveryEffectRecord => record !== null)
+export function localDeliveryEffectRecords(rows: Array<{ action?: string | null; metadata: unknown; created_at: string }>): LocalDeliveryEffectRecord[] {
+  return currentLocalDeliveryEffectRecords(rows)
 }
 
 export interface LocalDeliveryEffectsSummary {
@@ -135,12 +135,12 @@ export async function loadLocalDeliveryEffectsSummary(
   const ids = orders.map((order) => order.id)
   if (!ids.length) return summaries
   const [markers, warranties] = await Promise.all([
-    admin.from("order_audit_events").select("order_id,metadata,created_at").in("order_id", ids).in("action", LOCAL_DELIVERY_EFFECT_ACTIONS),
+    admin.from("order_audit_events").select("order_id,action,metadata,created_at").in("order_id", ids).in("action", LOCAL_DELIVERY_EFFECT_ACTIONS),
     admin.from("orden_items").select("orden_id,warranty_started_at,warranty_expires_at,warranty_status").in("orden_id", ids)
       .is("warranty_started_at", null).is("warranty_expires_at", null),
   ])
   if (markers.error || warranties.error) throw new Error("EFFECT_RECORDS_READ_FAILED")
-  const rowsByOrder = new Map<number, Array<{ metadata: unknown; created_at: string }>>()
+  const rowsByOrder = new Map<number, Array<{ action: string | null; metadata: unknown; created_at: string }>>()
   for (const row of markers.data ?? []) rowsByOrder.set(row.order_id, [...(rowsByOrder.get(row.order_id) ?? []), row])
   const pendingWarranties = new Map<number, number>()
   for (const item of warranties.data ?? []) {
@@ -224,7 +224,7 @@ export function localDeliveryServiceDeps(admin: LocalDeliveryAdminClient, actor:
     },
     async loadEffectRecords(orderId) {
       const { data, error } = await admin
-        .from("order_audit_events").select("metadata,created_at").eq("order_id", orderId).in("action", LOCAL_DELIVERY_EFFECT_ACTIONS)
+        .from("order_audit_events").select("action,metadata,created_at").eq("order_id", orderId).in("action", LOCAL_DELIVERY_EFFECT_ACTIONS)
       if (error) throw new Error("EFFECT_RECORDS_READ_FAILED")
       return localDeliveryEffectRecords(data ?? [])
     },

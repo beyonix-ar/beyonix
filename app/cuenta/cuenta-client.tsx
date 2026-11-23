@@ -71,6 +71,7 @@ import {
 import { resolveOrderTrackingLink } from "@/lib/andreani/public-tracking"
 import { isLocalDeliveryOrder } from "@/lib/shipping/local-delivery"
 import { getCustomerLocalDeliveryNotice } from "@/lib/shipping/local-delivery-outcome"
+import { LocalDeliveryArrivesToday } from "@/components/account/local-delivery-arrives-today"
 import { deriveOrderCancellationInfo } from "@/lib/orders/order-cancellation-origin"
 import { isOrderPaymentConfirmed } from "@/lib/orders/order-payment-status"
 import { getCustomerTransferReservationState } from "@/lib/orders/transfer-reservation-display"
@@ -738,6 +739,9 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
   const localDeliveryNotice = localDelivery && !isCancelled && order.estado === "en_camino"
     ? getCustomerLocalDeliveryNotice(order.local_delivery_outcome, serverNow ? Date.parse(serverNow) : undefined)
     : null
+  // "¡Llega hoy!": salió hoy con el cadete y sigue En camino sin novedades
+  // (el componente reevalúa el día con la página abierta).
+  const localDeliveryArrivesTodayAt = localDelivery && !isCancelled && !orderDelivered && !localDeliveryNotice ? serverNow : null
   const orderTracking = resolveOrderTrackingLink(order)
   const trackingNumber = orderTracking.trackingNumber ?? ""
   const trackingUrl = orderTracking.url
@@ -1281,6 +1285,9 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                           "border-t border-[var(--account-border-subtle)] pt-3 sm:border-t-0 sm:pt-0 sm:pl-3",
                       )}
                     >
+                      {localDeliveryArrivesTodayAt !== null && (
+                        <LocalDeliveryArrivesToday order={order} serverNow={localDeliveryArrivesTodayAt} />
+                      )}
                       <p className="text-xs font-normal text-[var(--account-text-primary)]">
                         Envío BEYONIX: entrega local, sin número de seguimiento.
                       </p>

@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
-import { AlertTriangle, ArrowRight, CheckCircle2, Download, History, PackageCheck, Printer, RotateCcw, Scale, Truck, XCircle } from "lucide-react"
+import { AlertTriangle, ArrowRight, CheckCircle2, Download, History, PackageCheck, Printer, QrCode, RotateCcw, Scale, Truck, XCircle } from "lucide-react"
 
 import { AdminBadge, AdminButton, AdminCard, AdminModal, AdminPrimaryButton, AdminRowMenu, AdminTextarea, AdminTextInput, AdminTrackingValue, type AdminRowMenuAction } from "@/app/admin/components/admin-controls"
 import { ADMIN_DISPATCH_CHANGED_EVENT } from "@/hooks/use-admin-notifications"
@@ -12,6 +12,7 @@ import { dispatchBatchName } from "@/lib/admin/dispatch-queue"
 import { playScanFeedback } from "@/lib/admin/scan-feedback"
 import { openAndreaniLabel } from "./andreani-label"
 import { printLocalDeliveryLabels } from "./local-delivery-label"
+import { CourierQrDialog, RevertHandoverDialog } from "./local-delivery-admin-dialogs"
 import { CancellationResolution } from "./cancellation-resolution"
 import { DifferenceResolution, type DifferenceInput } from "./difference-resolution"
 import { DispatchRequestError, dispatchRequest } from "./dispatch-request"
@@ -20,7 +21,7 @@ import { ScanField } from "./scan-field"
 
 type ScanFeedback = { tone: "success" | "warning" | "error"; message: string }
 /** Qué puede hacer quien mira el pedido (lo decide el servidor y lo vuelve a validar al ejecutar). */
-type Viewer = { costsVisible: boolean; canShip: boolean; canForce: boolean }
+type Viewer = { costsVisible: boolean; canShip: boolean; canForce: boolean; canCorrectLocalDispatch?: boolean; canRevertLocalHandover?: boolean }
 type Detail = OrderDispatchDetail & { viewer?: Viewer }
 type OrderResponse = Detail & { scan?: DispatchScanResult | null; labelConfirmation?: DispatchLabelConfirmation | null; parcelConfirmation?: LocalParcelConfirmation | null }
 /** Código de grupo en un renglón aleatorio: falta confirmar la variante física. */
@@ -69,6 +70,7 @@ export function OrderPreparationPanel({ orderId, onDone, onAdvance, footer }: {
   const [parcelDrafts, setParcelDrafts] = useState<ParcelDraft[]>([])
   const [reason, setReason] = useState("")
   const [pendingVariant, setPendingVariant] = useState<PendingVariant | null>(null)
+  const [localDialog, setLocalDialog] = useState<"qr" | "revert" | null>(null)
   const scanKey = useRef<string | null>(null)
   const variantKey = useRef<{ variantId: number; key: string } | null>(null)
   const actionKey = useRef<string | null>(null)
@@ -261,7 +263,9 @@ export function OrderPreparationPanel({ orderId, onDone, onAdvance, footer }: {
   })
   const printLocalLabels = () => void run(async () => {
     const count = await printLocalDeliveryLabels(orderId)
-    setNotice(`${count === 1 ? "Etiqueta BEYONIX lista" : `${count} etiquetas BEYONIX listas`} para imprimir. Pegá cada una en su bulto y escaneá su código.`)
+    setNotice(stage === "handed_over"
+      ? `${count === 1 ? "Etiqueta BEYONIX lista" : `${count} etiquetas BEYONIX listas`} para reimprimir: mismos códigos y el QR vigente del pedido (si estaba revocado, sale uno nuevo y el anterior deja de funcionar). El envío no cambia.`
+      : `${count === 1 ? "Etiqueta BEYONIX lista" : `${count} etiquetas BEYONIX listas`} para imprimir. Pegá cada una en su bulto y escaneá su código.`)
   })
   const openLocalParcels = () => { setParcelInput(String(pkg?.parcel_count ?? 1)); openDialog("local_parcels") }
   const openShip = () => {
@@ -293,8 +297,16 @@ export function OrderPreparationPanel({ orderId, onDone, onAdvance, footer }: {
     primary = { label: `Abrir ${dispatchBatchName(detail.batch)}`, icon: <ArrowRight className="size-5" />, onClick: () => goTo(`/admin/despachos?batch=${batchId}`) }
   }
 
+  // Envío BEYONIX ya entregado al cadete: reimprimir (mismos BX-PKG y QR vigente, sin
+  // tocar estado ni bultos) y corregir la entrega son excepciones de Admin,
+  // separadas del bloqueo de preparación. El servidor y la base lo revalidan.
+  const localDispatched = Boolean(local) && stage === "handed_over"
+  const canCorrectLocalDispatch = viewer.canCorrectLocalDispatch === true
   const labelItems: AdminRowMenuAction[] = local ? (localParcelsDefined
-    ? [{ key: "local-print", label: "Reimprimir etiquetas BEYONIX", icon: <Printer className="size-4" />, disabled: busy || stage === "handed_over", onSelect: printLocalLabels }]
+    ? [
+        { key: "local-print", label: "Reimprimir etiquetas BEYONIX", icon: <Printer className="size-4" />, disabled: busy || (localDispatched && !canCorrectLocalDispatch), onSelect: printLocalLabels },
+        { key: "local-qr", label: "Ver QR del cadete", icon: <QrCode className="size-4" />, disabled: busy, onSelect: () => setLocalDialog("qr") },
+      ]
     : []) : shipment.created ? [
     ...(identified ? [{ key: "print", label: "Reimprimir etiqueta Andreani", icon: <Printer className="size-4" />, disabled: busy, onSelect: () => printLabel("print") }] : []),
     { key: "download", label: "Guardar PDF de etiqueta Andreani", icon: <Download className="size-4" />, disabled: busy, onSelect: () => printLabel("download") },
@@ -303,6 +315,9 @@ export function OrderPreparationPanel({ orderId, onDone, onAdvance, footer }: {
     { key: "history", label: "Ver historial", icon: <History className="size-4" />, onSelect: () => goTo(`/admin/pedidos/${orderId}?tab=historial`) },
     ...(stage === "packing" && pendingLines.length && !packingBlocked ? [{ key: "difference", label: "Resolver diferencia", icon: <Scale className="size-4" />, onSelect: () => openDialog("difference") }] : []),
     ...(pkg && !inBatch && !handedOver && stage !== "handed_over" ? [{ key: "reset", label: "Reiniciar preparación", icon: <RotateCcw className="size-4" />, tone: "danger" as const, onSelect: () => openDialog("reset") }] : []),
+    ...(localDispatched && viewer.canRevertLocalHandover === true
+      ? [{ key: "local-revert", label: "Corregir entrega al cadete", icon: <History className="size-4" />, tone: "danger" as const, onSelect: () => setLocalDialog("revert") }]
+      : []),
   ]
   const shipmentItems: AdminRowMenuAction[] = [
     ...(shipment.created ? [{ key: "tracking", label: "Ver seguimiento", icon: <Truck className="size-4" />, onSelect: () => goTo(`/admin/pedidos/${orderId}?tab=envio`) }] : []),
@@ -441,6 +456,12 @@ export function OrderPreparationPanel({ orderId, onDone, onAdvance, footer }: {
       <AdminTextInput title="Motivo obligatorio" value={reason} onChange={setReason} placeholder="Ingresá el motivo (mínimo 10 caracteres)" />
       {dialogError && <p role="alert" className="mt-2 text-sm font-bold text-red-300">{dialogError}</p>}
     </AdminModal>
+    {localDialog === "qr" && <CourierQrDialog orderId={orderId} onClose={() => setLocalDialog(null)} />}
+    {localDialog === "revert" && <RevertHandoverDialog orderId={orderId} onClose={() => setLocalDialog(null)} onReverted={() => {
+      setLocalDialog(null)
+      setNotice("Entrega al cadete corregida: el pedido volvió a preparación. Cuando salga, marcalo En camino otra vez.")
+      void load()
+    }} />}
     <DifferenceResolution key={dialog === "difference" ? "open" : "closed"} open={dialog === "difference"} lines={detail.lines} busy={busy} error={dialogError} onClose={() => setDialog(null)}
       onSubmit={(input: DifferenceInput) => post({ action: "adjust", ...input }, () => { setDialog(null); setNotice("Diferencia registrada.") })} />
     <AdminModal open={pendingVariant !== null} compact title="¿Qué variante física estás despachando?" description={`Código reconocido: ${pendingVariant?.productName ?? "producto"}. El código no identifica el color: elegí el que tenés en la mano.`} onClose={() => { setPendingVariant(null); variantKey.current = null }} footer={<div className="flex justify-end"><AdminButton disabled={busy} onClick={() => { setPendingVariant(null); variantKey.current = null }}>Cancelar</AdminButton></div>}>

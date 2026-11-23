@@ -179,6 +179,11 @@ export const COURIER_RESULT_MESSAGES = {
   conflict: "El pedido cambió mientras lo actualizabas. Revisá la pantalla.",
 } as const
 
+// ── Corrección de "Entregado al cadete" ──────────────────────────────────────
+
+export const LOCAL_DELIVERY_REVERT_REASON_MIN = 10
+export const LOCAL_DELIVERY_REVERT_REASON_MAX = 500
+
 // ── Mis compras ──────────────────────────────────────────────────────────────
 
 /** Resumen del resultado local que puede ver el cliente (sin comentarios, motivos ni datos internos). */
@@ -186,6 +191,35 @@ export interface CustomerLocalDeliveryOutcome {
   status: LocalDeliveryOutcomeStatus
   failedAttempts: number
   reservation: { status: LocalDeliveryReservationStatus; expiresAt: string } | null
+  /** Salida vigente con el cadete (registro de En camino posterior a cualquier corrección); `null` si no se conoce. */
+  inTransitAt?: string | null
+}
+
+const CUSTOMER_CANCELLED_FINANCIAL = ["cancellation_requested", "refund_pending", "refunded", "cancelled"]
+
+/** Día calendario en hora de BEYONIX ("2026-11-23"). */
+function businessDay(value: number) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value))
+}
+
+/**
+ * "¡Llega hoy!" (Mis compras): sólo un Envío BEYONIX que salió HOY con el
+ * cadete (hora de BEYONIX), sigue En camino y sin ningún resultado del cadete
+ * (un intento fallido, incidencia o regreso ya no permite prometerlo). Nunca
+ * cancelado, con reintegro ni entregado. Si Admin corrige la entrega al cadete,
+ * el pedido deja de estar En camino y el mensaje desaparece.
+ */
+export function isLocalDeliveryArrivingToday(
+  order: { estado: string | null; cancelled_at?: string | null; delivered_at?: string | null; financial_status?: string | null; local_delivery_outcome?: CustomerLocalDeliveryOutcome | null },
+  nowMs: number,
+) {
+  if (order.estado !== "en_camino" || order.cancelled_at || order.delivered_at) return false
+  if (CUSTOMER_CANCELLED_FINANCIAL.includes(order.financial_status ?? "")) return false
+  const outcome = order.local_delivery_outcome
+  if (!outcome || outcome.status !== "pending" || outcome.failedAttempts !== 0 || !outcome.inTransitAt) return false
+  const inTransitMs = Date.parse(outcome.inTransitAt)
+  if (!Number.isFinite(inTransitMs) || !Number.isFinite(nowMs) || inTransitMs > nowMs + 5 * 60_000) return false
+  return businessDay(inTransitMs) === businessDay(nowMs)
 }
 
 export interface CustomerLocalDeliveryNotice {

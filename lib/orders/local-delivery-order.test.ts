@@ -19,6 +19,7 @@ import {
 } from "./local-delivery-status.ts"
 import {
   advanceLocalDelivery,
+  currentLocalDeliveryEffectRecords,
   getExhaustedLocalDeliveryEffects,
   getMissingLocalDeliveryEffects,
   isActiveWarrantyItem,
@@ -1264,4 +1265,23 @@ test("En camino: la ruta usa la RPC atómica (bultos verificados en el mismo wri
   const rpc = migrationA.slice(migrationA.indexOf("create or replace function public.mark_local_delivery_in_transit"))
   assert.match(rpc, /from public\.ordenes where id = p_order_id for update;\s+if not found then return; end if;\s+perform 1 from public\.order_packages where order_id = p_order_id for update;/)
   assert.match(rpc, /or not public\.local_delivery_parcels_ready\(p_order_id\) then\s+return;/)
+})
+
+test("corrección de 'Entregado al cadete': la próxima salida vuelve al historial, pero el email de En camino ya enviado nunca se reenvía", () => {
+  const marker = (effect: string, state: string, createdAt: string) =>
+    ({ action: "order_status_changed", metadata: { localDeliveryEffect: effect, localDeliveryEffectState: state }, created_at: createdAt })
+  const rows = [
+    marker("in_transit_status", "completed", "2026-11-23T10:00:00.000Z"),
+    { ...marker("in_transit_email", "completed", "2026-11-23T10:00:01.000Z"), action: "local_delivery_email_sent" },
+    { action: "local_delivery_in_transit_reverted", metadata: { reason: "Se marcó por error" }, created_at: "2026-11-23T10:30:00.000Z" },
+  ]
+  const afterRevert = summarizeLocalDeliveryEffects(currentLocalDeliveryEffectRecords(rows), Date.parse("2026-11-23T11:00:00.000Z"))
+  assert.equal(afterRevert.get("in_transit_status"), undefined, "la salida anulada ya no cuenta")
+  assert.equal(afterRevert.get("in_transit_email"), "completed", "no se reenvía el aviso al cliente")
+  assert.deepEqual(getMissingLocalDeliveryEffects("in_transit", afterRevert, 0), ["in_transit_status"])
+  // Vuelve a salir: su registro (posterior a la corrección) sí cuenta, sin duplicar nada.
+  const redispatched = summarizeLocalDeliveryEffects(currentLocalDeliveryEffectRecords([...rows, marker("in_transit_status", "completed", "2026-11-23T11:00:00.000Z")]), Date.parse("2026-11-23T11:05:00.000Z"))
+  assert.deepEqual(getMissingLocalDeliveryEffects("in_transit", redispatched, 0), [])
+  // Sin correcciones, el comportamiento anterior no cambia.
+  assert.deepEqual(currentLocalDeliveryEffectRecords(rows.slice(0, 2)).map((row) => row.effect), ["in_transit_status", "in_transit_email"])
 })

@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { AlertTriangle, Bike, CheckCircle2, Clock3, Eye, PackageCheck, RotateCcw, Truck, Undo2 } from "lucide-react"
+import { AlertTriangle, Bike, CheckCircle2, Clock3, Eye, History, PackageCheck, QrCode, RotateCcw, Truck, Undo2 } from "lucide-react"
 
 import { AdminBadge, AdminButton, AdminEmptyState, AdminPrimaryButton, AdminSection } from "@/app/admin/components/admin-controls"
 import { orderCode } from "@/lib/admin/dispatch"
@@ -23,6 +23,7 @@ import {
   type LocalDeliveryOutcomeStatus,
 } from "@/lib/shipping/local-delivery-outcome"
 import { dispatchRequest } from "./dispatch-request"
+import { CourierQrDialog, RevertHandoverDialog } from "./local-delivery-admin-dialogs"
 import { LocalDeliveryReturns } from "./local-delivery-returns"
 
 interface LocalDeliveryRecord {
@@ -42,6 +43,8 @@ interface LocalDeliveryRecord {
   preparationError?: string | null
   /** Resultado informado por el cadete (QR), retorno y reserva. */
   outcome?: AdminLocalDeliveryOutcome | null
+  /** "Corregir entrega al cadete": calculado con la misma regla que aplica la base (local_delivery_revert_blockers). */
+  canRevertHandover?: boolean
 }
 
 type PanelAction = LocalDeliveryAction | "retry_effects" | "incident_retry" | "incident_return"
@@ -79,14 +82,17 @@ const CONFIRMATIONS: Partial<Record<PanelAction, (code: string) => string>> = {
  */
 export function LocalDeliveryPanel({ refreshSignal }: { refreshSignal?: unknown }) {
   const [orders, setOrders] = useState<LocalDeliveryRecord[] | null>(null)
+  const [canRevertHandover, setCanRevertHandover] = useState(false)
   const [busyId, setBusyId] = useState<number | null>(null)
   const [error, setError] = useState("")
   const [notice, setNotice] = useState("")
+  const [dialog, setDialog] = useState<{ kind: "qr" | "revert"; orderId: number } | null>(null)
 
   const load = useCallback(async () => {
     try {
-      const data = await dispatchRequest<{ orders?: unknown }>("/local")
+      const data = await dispatchRequest<{ orders?: unknown; viewer?: { canRevertHandover?: unknown } }>("/local")
       setOrders(Array.isArray(data.orders) ? data.orders as LocalDeliveryRecord[] : [])
+      setCanRevertHandover(data.viewer?.canRevertHandover === true)
       setError("")
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No se pudieron cargar las entregas locales.")
@@ -148,6 +154,11 @@ export function LocalDeliveryPanel({ refreshSignal }: { refreshSignal?: unknown 
     const recipient = [order.cliente_nombre, address, zone].filter(Boolean).join(" · ")
     const recipientDetail = [recipient, reference && `Ref.: ${reference}`, order.cliente_telefono && `Tel.: ${order.cliente_telefono}`].filter(Boolean).join(" · ")
     // Una sola línea operativa: lo que hay que hacer o saber ahora.
+    // En camino: QR del cadete (el de las etiquetas) y, para Admin, corregir
+    // una entrega al cadete marcada por error mientras no haya resultado.
+    const inTransit = order.stage === "in_transit"
+    const showQr = inTransit && outcome !== null && !blocked
+    const showRevert = inTransit && canRevertHandover && order.canRevertHandover === true
     const attempts = outcome && outcome.failedAttempts > 0
       ? (outcome.failedAttempts === 1 ? "1 intento fallido (cliente ausente) · pendiente segundo intento" : "2 intentos fallidos (cliente ausente)")
       : null
@@ -240,6 +251,17 @@ export function LocalDeliveryPanel({ refreshSignal }: { refreshSignal?: unknown 
               Regresar a BEYONIX
             </AdminButton>
           )}
+          {showQr && (
+            <AdminButton size="sm" variant="ghost" disabled={busy} className="size-8 shrink-0 px-0" data-local-delivery-qr=""
+              aria-label={`QR del cadete de ${code}`} title="QR del cadete" icon={<QrCode className="size-4" aria-hidden />}
+              onClick={() => setDialog({ kind: "qr", orderId: order.id })} />
+          )}
+          {showRevert && (
+            <AdminButton size="sm" disabled={busy} data-local-delivery-revert="" icon={<History className="size-4" aria-hidden />}
+              title="Volver a preparación un pedido marcado En camino por error" onClick={() => setDialog({ kind: "revert", orderId: order.id })}>
+              Corregir entrega al cadete
+            </AdminButton>
+          )}
           {next === "entregado" && (
             <AdminPrimaryButton size="sm" disabled={busy} onClick={() => void advance(order, "entregado")}>
               <CheckCircle2 className="size-4" />
@@ -287,6 +309,14 @@ export function LocalDeliveryPanel({ refreshSignal }: { refreshSignal?: unknown 
             </div>
           )}
         </>
+      )}
+      {dialog?.kind === "qr" && <CourierQrDialog key={dialog.orderId} orderId={dialog.orderId} onClose={() => setDialog(null)} />}
+      {dialog?.kind === "revert" && (
+        <RevertHandoverDialog key={dialog.orderId} orderId={dialog.orderId} onClose={() => setDialog(null)} onReverted={() => {
+          setNotice(`${orderCode(dialog.orderId)}: entrega al cadete corregida. El pedido volvió a preparación.`)
+          setDialog(null)
+          void load()
+        }} />
       )}
     </AdminSection>
   )

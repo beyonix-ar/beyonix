@@ -13,8 +13,13 @@ import {
   NO_LOCAL_DELIVERY_PREPARATION,
   whereLocalDeliveryEligible,
 } from "@/lib/orders/local-delivery-deps"
-import { loadAdminLocalDeliveryOutcomes } from "@/lib/orders/local-delivery-outcomes-server"
-import { isInTransitEmailObsolete } from "@/lib/shipping/local-delivery-outcome"
+import { loadAdminLocalDeliveryOutcomes, loadLocalDeliveryRevertable } from "@/lib/orders/local-delivery-outcomes-server"
+import { isRequestKey } from "@/lib/admin/dispatch"
+import {
+  isInTransitEmailObsolete,
+  LOCAL_DELIVERY_REVERT_REASON_MAX,
+  LOCAL_DELIVERY_REVERT_REASON_MIN,
+} from "@/lib/shipping/local-delivery-outcome"
 
 // Envío BEYONIX: circuito local mínimo, separado de Andreani (sin guía ni
 // Bulto general Andreani). Lo opera cualquier operador interno: a diferencia de
@@ -81,17 +86,21 @@ export async function GET(request: Request) {
     ...queuedIds.flatMap((id) => queuedById.get(id) ?? []),
     ...((delivered.data ?? []) as LocalDeliveryRow[]),
   ]
-  let loaded: [Map<number, LocalDeliveryPreparation>, Awaited<ReturnType<typeof loadAdminLocalDeliveryOutcomes>>]
+  const canRevertHandover = canCorrectLocalDispatch(auth.profile.rol)
+  const inTransitIds = rows.filter((row) => row.estado === "en_camino").map((row) => row.id)
+  let loaded: [Map<number, LocalDeliveryPreparation>, Awaited<ReturnType<typeof loadAdminLocalDeliveryOutcomes>>, Set<number>]
   try {
     loaded = await Promise.all([
       loadLocalPreparations(auth.admin, rows.filter((row) => getLocalDeliveryStage(row) === "preparing").map((row) => row.id)),
       // Resultado del cadete, retorno y reserva: sólo de pedidos que ya salieron.
-      loadAdminLocalDeliveryOutcomes(auth.admin, rows.filter((row) => row.estado === "en_camino").map((row) => row.id)),
+      loadAdminLocalDeliveryOutcomes(auth.admin, inTransitIds),
+      // "Corregir entrega al cadete": la misma regla que aplica la base al ejecutarla.
+      canRevertHandover ? loadLocalDeliveryRevertable(auth.admin, inTransitIds) : Promise.resolve(new Set<number>()),
     ])
   } catch {
     return Response.json({ error: "No se pudieron cargar las entregas locales." }, { status: 500 })
   }
-  const [preparations, outcomes] = loaded
+  const [preparations, outcomes, revertable] = loaded
   // Efectos pendientes (historial, garantía, email): el cron los reintenta
   // solo; los de reintento agotado quedan marcados para Despachos. El aviso
   // "En camino" queda obsoleto si el pedido regresa o regresó a BEYONIX.
@@ -104,6 +113,8 @@ export async function GET(request: Request) {
   }
 
   return Response.json({
+    // Lo vuelve a validar el servidor (y la base) al ejecutar.
+    viewer: { canRevertHandover },
     orders: rows.map((row) => {
       const stage = getLocalDeliveryStage(row)
       const preparation = preparations.get(row.id) ?? NO_LOCAL_DELIVERY_PREPARATION
@@ -113,6 +124,7 @@ export async function GET(request: Request) {
         // Preparando: qué falta (pickeo, bultos, etiquetas) para entregarlo al cadete.
         ...(stage === "preparing" ? { preparation, preparationError: getLocalDeliveryPreparationError(preparation) } : {}),
         outcome: outcomes.get(row.id) ?? null,
+        canRevertHandover: revertable.has(row.id),
         pendingEffects: effects.get(row.id)?.pending ?? [],
         exhaustedEffects: effects.get(row.id)?.exhausted ?? [],
       }
@@ -125,19 +137,58 @@ const INCIDENT_ERRORS: Record<string, { status: number; message: string }> = {
   DISPATCH_ORDER_NOT_FOUND: { status: 404, message: "No encontramos el pedido." },
 }
 
+const REVERT_ERRORS: Record<string, { status: number; message: string }> = {
+  LOCAL_DELIVERY_REVERT_FORBIDDEN: { status: 403, message: "Sólo un Admin o Super Admin puede corregir la entrega al cadete." },
+  LOCAL_DELIVERY_REVERT_REASON_REQUIRED: { status: 400, message: `Ingresá el motivo de la corrección (entre ${LOCAL_DELIVERY_REVERT_REASON_MIN} y ${LOCAL_DELIVERY_REVERT_REASON_MAX} caracteres).` },
+  LOCAL_DELIVERY_REVERT_INVALID: { status: 400, message: "Solicitud inválida." },
+  LOCAL_DELIVERY_REVERT_ORDER_CANCELLED: { status: 409, message: "El pedido está cancelado o con reintegro: no se corrige la entrega al cadete." },
+  LOCAL_DELIVERY_REVERT_ALREADY_DELIVERED: { status: 409, message: "El pedido ya figura como entregado: no se puede corregir la entrega al cadete." },
+  LOCAL_DELIVERY_REVERT_NOT_IN_TRANSIT: { status: 409, message: "El pedido ya no está En camino. Actualizá la lista." },
+  LOCAL_DELIVERY_REVERT_OUTCOME_RECORDED: { status: 409, message: "El cadete ya registró un resultado de la entrega (intento fallido, incidencia o regreso): no se puede corregir. Resolvelo desde Entregas locales." },
+  LOCAL_DELIVERY_REVERT_PREVIOUS_UNKNOWN: { status: 409, message: "No hay un registro confiable del estado del que salió el pedido: no se corrige automáticamente para no inventarlo." },
+  DISPATCH_LOCAL_DELIVERY_ONLY: { status: 409, message: "Este pedido no usa Envío BEYONIX." },
+  DISPATCH_ORDER_NOT_FOUND: { status: 404, message: "No encontramos el pedido." },
+}
+
+const canCorrectLocalDispatch = (role: string | null | undefined) => role === "admin" || role === "super_admin"
+
+/**
+ * Corrección de "Entregado al cadete" (marcado por error): sólo Admin/Super
+ * Admin, con motivo y clave de solicitud. La base vuelve a validar rol,
+ * estado, resultado del cadete y cancelación bajo lock, y deja la auditoría.
+ */
+async function revertHandover(auth: Exclude<Awaited<ReturnType<typeof requireOperator>>, { error: Response }>, orderId: number, body: { reason?: unknown; requestKey?: unknown }) {
+  if (!canCorrectLocalDispatch(auth.profile.rol)) return Response.json({ error: REVERT_ERRORS.LOCAL_DELIVERY_REVERT_FORBIDDEN.message }, { status: 403 })
+  const reason = typeof body.reason === "string" ? body.reason.trim().replace(/\s+/g, " ") : ""
+  if (reason.length < LOCAL_DELIVERY_REVERT_REASON_MIN || reason.length > LOCAL_DELIVERY_REVERT_REASON_MAX) {
+    return Response.json({ error: REVERT_ERRORS.LOCAL_DELIVERY_REVERT_REASON_REQUIRED.message }, { status: 400 })
+  }
+  if (!isRequestKey(body.requestKey)) return Response.json({ error: REVERT_ERRORS.LOCAL_DELIVERY_REVERT_INVALID.message }, { status: 400 })
+  const { data, error } = await auth.admin.rpc("revert_local_delivery_in_transit", {
+    p_order_id: orderId, p_actor_id: auth.user.id, p_reason: reason, p_request_key: body.requestKey,
+  })
+  if (error) {
+    const known = Object.entries(REVERT_ERRORS).find(([code]) => error.message?.includes(code))?.[1]
+    return Response.json({ error: known?.message ?? "No se pudo corregir la entrega al cadete." }, { status: known?.status ?? 500 })
+  }
+  const result = data as { estado?: unknown } | null
+  return Response.json({ ok: true, order: { id: orderId, estado: typeof result?.estado === "string" ? result.estado : null, stage: "preparing" } })
+}
+
 export async function POST(request: Request) {
   const auth = await requireOperator(request)
   if ("error" in auth) return auth.error
 
-  const body = await request.json().catch(() => null) as { orderId?: unknown; action?: unknown } | null
+  const body = await request.json().catch(() => null) as { orderId?: unknown; action?: unknown; reason?: unknown; requestKey?: unknown } | null
   const orderId = Number(body?.orderId)
   const action = body?.action
   if (!Number.isSafeInteger(orderId) || orderId <= 0 ||
-      (!isLocalDeliveryAction(action) && action !== "retry_effects" && !isIncidentAction(action))) {
+      (!isLocalDeliveryAction(action) && action !== "retry_effects" && action !== "revert_in_transit" && !isIncidentAction(action))) {
     return Response.json({ error: "La acción de entrega no es válida." }, { status: 400 })
   }
 
   try {
+    if (action === "revert_in_transit") return await revertHandover(auth, orderId, body ?? {})
     if (isIncidentAction(action)) {
       const { error } = await auth.admin.rpc("resolve_local_delivery_incident", {
         p_order_id: orderId, p_actor_id: auth.user.id, p_resolution: INCIDENT_ACTIONS[action],

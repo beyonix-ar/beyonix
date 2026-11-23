@@ -1559,7 +1559,15 @@ function buildOrderTimeline(order: SupabasePedido): OrderTimelineEvent[] {
       statuses.includes(String(event.metadata?.newEstado ?? "")),
     )?.created_at
 
-  const dispatchedAt = statusAuditDate(["enviado", "en_camino", "shipped", "in_transit"])
+  // Envío BEYONIX: una corrección de "Entregado al cadete" anula la salida
+  // anterior; el despacho vigente es el registrado después de la última.
+  const inTransitReverts = auditEvents.filter((event) => event.action === "local_delivery_in_transit_reverted" && event.created_at)
+  const lastInTransitRevertMs = inTransitReverts.length ? Date.parse(inTransitReverts[inTransitReverts.length - 1].created_at) : Number.NEGATIVE_INFINITY
+  const dispatchedAt = findAuditEvent((event) =>
+    Date.parse(event.created_at) > lastInTransitRevertMs &&
+    ["enviado", "en_camino", "shipped", "in_transit"].some((status) =>
+      event.new_status === status || String(event.metadata?.newEstado ?? "") === status),
+  )?.created_at
   const deliveredAt =
     pedido.delivered_at || statusAuditDate(["entregado", "delivered"])
   const cancellationInfo = deriveOrderCancellationInfo(auditEvents, pedido)
@@ -1644,6 +1652,16 @@ function buildOrderTimeline(order: SupabasePedido): OrderTimelineEvent[] {
     description: "El pedido salió a distribución.",
     type: "success",
   })
+  for (const event of inTransitReverts) {
+    const reason = typeof event.metadata?.reason === "string" ? event.metadata.reason : ""
+    addEvent({
+      key: `local-in-transit-reverted-${event.created_at}`,
+      title: "Entrega al cadete corregida",
+      at: event.created_at,
+      description: `El pedido volvió a preparación.${reason ? ` Motivo: ${reason}` : ""} Registrado por un Admin.`,
+      type: "info",
+    })
+  }
   addEvent({
     key: "shipping-delivered",
     title: "Envío entregado",

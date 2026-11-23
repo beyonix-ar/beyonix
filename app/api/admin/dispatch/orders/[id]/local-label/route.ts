@@ -9,6 +9,7 @@ type Context = { params: Promise<{ id: string }> }
 
 const ORDER_COLUMNS = "id,estado,cancelled_at,financial_status,shipping_provider,envio_proveedor,cliente_nombre,cliente_direccion,localidad,provincia,cp_destino,cliente_telefono"
 const CANCELLED_FINANCIAL = ["cancellation_requested", "refund_pending", "refunded", "cancelled"]
+const DISPATCHED_ESTADOS = ["en_camino", "entregado"]
 const CANCELLED_MESSAGE = "Pedido cancelado — no se generan etiquetas de entrega."
 const NOT_LOCAL_MESSAGE = "Este pedido no usa Envío BEYONIX: imprimí su etiqueta Andreani."
 
@@ -40,6 +41,12 @@ export async function POST(request: Request, context: Context) {
   if (order.estado === "cancelado" || order.cancelled_at || CANCELLED_FINANCIAL.includes(order.financial_status ?? "")) {
     return Response.json({ error: CANCELLED_MESSAGE }, { status: 409 })
   }
+  // Ya salió con el cadete: reimprimir (etiqueta perdida o dañada) es una
+  // excepción de Admin. Es sólo un documento: mismos BX-PKG y QR vigente, sin
+  // cambiar estado, bultos ni stock; la generación queda en el historial.
+  if (DISPATCHED_ESTADOS.includes(order.estado ?? "") && auth.profile.rol !== "admin" && auth.profile.rol !== "super_admin") {
+    return Response.json({ error: "El pedido ya salió con el cadete: sólo un Admin puede reimprimir sus etiquetas." }, { status: 403 })
+  }
 
   const pkgResult = await auth.admin.from("order_packages").select("id,status,attempt_number,parcel_count,parcels_defined_at").eq("order_id", id).maybeSingle()
   if (pkgResult.error) return Response.json({ error: "No se pudo cargar la preparación." }, { status: 500 })
@@ -52,8 +59,9 @@ export async function POST(request: Request, context: Context) {
   if (parcelsResult.error) return Response.json({ error: "No se pudieron cargar los bultos." }, { status: 500 })
 
   // QR de gestión de entrega: URL pública confiable (nunca el Origin de la
-  // request en producción) + token aleatorio del pedido. Reimprimir devuelve
-  // el mismo token (la base lo crea una sola vez, bajo lock del pedido).
+  // request en producción) + token aleatorio del pedido. Reimprimir devuelve el
+  // token vigente (la base lo crea una sola vez, bajo lock del pedido); si fue
+  // revocado, la base lo rota en la misma entrega y el anterior deja de existir.
   const siteUrl = resolveTrustedSiteUrl(request)
   if (!siteUrl) return Response.json({ error: "Falta configurar la URL pública del sitio para el QR de entrega." }, { status: 500 })
   const ensured = await auth.admin.rpc("ensure_local_delivery_shipment", {
