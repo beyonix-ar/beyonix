@@ -29,6 +29,12 @@ if [ "${BEYONIX_DEPLOY_SANDBOX:-}" = 1 ]; then
   STABILITY_SECONDS="${BEYONIX_SANDBOX_STABILITY:-1}"
   NPM_CI_MEMORY_MAX="${BEYONIX_SANDBOX_NPM_MEMORY:-1200M}"
   NPM_CI_MIN_AVAILABLE_MB="${BEYONIX_SANDBOX_NPM_MIN_MB:-1500}"
+  # Inyectables sólo en el sandbox (pruebas locales sin flock/df reales y con fallos simulados).
+  FLOCK="${BEYONIX_SANDBOX_FLOCK:-flock}"
+  DF="${BEYONIX_SANDBOX_DF:-df}"
+  RM="${BEYONIX_SANDBOX_RM:-rm}"
+  MV="${BEYONIX_SANDBOX_MV:-mv}"
+  CLEANUP_GRACE_SECONDS="${BEYONIX_SANDBOX_GRACE_SECONDS:-21600}"
 else
   APPS=/home/beyonix/apps
   PM2=pm2
@@ -43,6 +49,12 @@ else
   STABILITY_SECONDS=60
   NPM_CI_MEMORY_MAX=1200M
   NPM_CI_MIN_AVAILABLE_MB=1500
+  FLOCK=flock
+  DF=df
+  RM=rm
+  MV=mv
+  # Directorios sin .release-info (o incoming) más nuevos que esto se consideran en preparación.
+  CLEANUP_GRACE_SECONDS=21600
 fi
 
 REL_ROOT="$APPS/beyonix-releases"
@@ -51,6 +63,9 @@ ENV_FILE="$APPS/beyonix/.env.local"
 HISTORY="$REL_ROOT/.deploy-history"
 LAST_SWITCH="$REL_ROOT/.last-switch"
 LOCK_FILE="$REL_ROOT/.switch.lock"
+# Armado de releases (compartido) vs. limpieza (exclusivo): nunca se borra mientras se prepara una.
+PREPARE_LOCK="$REL_ROOT/.prepare.lock"
+CLEANUP_HISTORY="$REL_ROOT/.cleanup-history"
 RUN_LOG=/dev/null
 RELEASE_NAME_RE='^[0-9a-f]{7}-[0-9]{8}-[0-9]{6}$'
 DEPLOY_ID_RE='^[0-9]{8}-[0-9]{6}-[0-9a-f]{8}$'
@@ -71,8 +86,20 @@ open_run_log() { # open_run_log <deploy-id> <tipo>
 # Bloqueo de cambios de versión: lo libera el sistema al terminar el proceso, pase lo que pase.
 acquire_switch_lock() {
   exec 9>"$LOCK_FILE" || return 1
-  flock -n 9
+  "$FLOCK" -n 9
 }
+# Armado de una release: bloqueo compartido (varios armados no se excluyen entre sí).
+acquire_prepare_lock_shared() {
+  exec 8>"$PREPARE_LOCK" || return 1
+  "$FLOCK" -s -n 8
+}
+# Limpieza: exclusivo; falla si hay un armado en curso (o si otra limpieza lo tiene).
+acquire_prepare_lock_exclusive() {
+  exec 8>"$PREPARE_LOCK" || return 1
+  "$FLOCK" -n 8
+}
+
+disk_free_mb() { "$DF" --output=avail -m "$APPS" | tail -1 | tr -d ' '; }
 
 write_result() { # write_result <deploy-id> <resultado> <detalle>
   printf 'id=%s result=%s at=%s detail=%s\n' "$1" "$2" "$(date -Is)" "$3" > "$LAST_SWITCH.tmp.$$" \

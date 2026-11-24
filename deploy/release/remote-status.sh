@@ -19,7 +19,7 @@ main() {
   else
     echo "active_target=sin-enlace"
   fi
-  echo "disk_free_mb=$(df --output=avail -m "$APPS" | tail -1 | tr -d ' ')"
+  echo "disk_free_mb=$(disk_free_mb)"
   echo "mem_available_mb=$(awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo)"
   echo "public_env_hash=$(grep -E '^NEXT_PUBLIC_[A-Z0-9_]*=' "$ENV_FILE" 2>/dev/null | tr -d '\r' | sed -E 's/[[:space:]]+$//' | LC_ALL=C sort | sha256sum | cut -c1-16)"
   echo "local_home=$("$CURL" -s -o /dev/null -w '%{http_code}' --max-time 10 "$HEALTH_BASE/" 2>/dev/null || echo ERR)"
@@ -31,7 +31,7 @@ main() {
       echo "switch_result=desconocido"
     fi
   fi
-  if [ -e "$LOCK_FILE" ] && ! flock -n "$LOCK_FILE" true 2>/dev/null; then
+  if [ -e "$LOCK_FILE" ] && ! "$FLOCK" -n "$LOCK_FILE" true 2>/dev/null; then
     echo "switch_lock=tomado"
   else
     echo "switch_lock=libre"

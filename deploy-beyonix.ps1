@@ -11,6 +11,8 @@
   .\deploy-beyonix.ps1 -SoloPreparar    # prepara y verifica la versión nueva sin activarla
   .\deploy-beyonix.ps1 -Rollback        # vuelve a la versión anterior al último despliegue
   .\deploy-beyonix.ps1 -Estado          # versión activa y resultado del último cambio (sólo lectura)
+  .\deploy-beyonix.ps1 -Limpiar -Simular   # muestra qué releases viejas se borrarían (no borra nada)
+  .\deploy-beyonix.ps1 -Limpiar            # borra releases viejas (nunca la activa, el rollback ni las preparadas)
   .\deploy-beyonix.ps1 -ValidacionCompleta   # además ejecuta npm test completo (siempre, sin reutilizar aprobaciones)
   (también combinable: -SoloPreparar -ValidacionCompleta)
 #>
@@ -30,7 +32,13 @@ param(
   [string]$Version = '',
 
   [Parameter(ParameterSetName = 'Estado')]
-  [switch]$Estado
+  [switch]$Estado,
+
+  [Parameter(ParameterSetName = 'Limpiar')]
+  [switch]$Limpiar,
+
+  [Parameter(ParameterSetName = 'Limpiar')]
+  [switch]$Simular
 )
 
 $ErrorActionPreference = 'Stop'
@@ -51,6 +59,10 @@ $argumentos = @($script)
 if ($SoloPreparar) { $argumentos += '--solo-preparar' }
 if ($ValidacionCompleta) { $argumentos += '--validacion-completa' }
 if ($Estado) { $argumentos += '--estado' }
+if ($Limpiar) {
+  $argumentos += '--limpiar'
+  if ($Simular) { $argumentos += '--simular' }
+}
 if ($Rollback) {
   $argumentos += '--rollback'
   if ($Version) { $argumentos += $Version }

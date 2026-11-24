@@ -13,6 +13,8 @@ Desde PowerShell, en la carpeta del repositorio:
 .\deploy-beyonix.ps1                 # actualización (validación estándar: ESLint + TypeScript, sin npm test)
 .\deploy-beyonix.ps1 -SoloPreparar   # todo menos activar: prepara y verifica la versión nueva
 .\deploy-beyonix.ps1 -Estado         # versión activa y resultado del último cambio (sólo lectura)
+.\deploy-beyonix.ps1 -Limpiar -Simular   # qué releases viejas se borrarían (no borra nada)
+.\deploy-beyonix.ps1 -Limpiar            # borra releases viejas con la política segura
 .\deploy-beyonix.ps1 -Rollback       # vuelve a la versión anterior al último despliegue
 .\deploy-beyonix.ps1 -ValidacionCompleta                # además ejecuta npm test completo (siempre)
 .\deploy-beyonix.ps1 -SoloPreparar -ValidacionCompleta
@@ -137,7 +139,7 @@ Si se corta la conexión, el VPS completa (o revierte) solo y deja el resultado 
 `~/apps/beyonix-releases/.last-switch`; la PC reintenta leerlo durante ~10 minutos.
 
 Nunca: aplica migraciones, modifica variables de entorno, envía emails, toca datos, timers ni
-backups, ni borra releases anteriores.
+backups. Las releases viejas se borran sólo con la política de limpieza (ver Mantenimiento).
 
 ## Rollback manual
 
@@ -167,16 +169,56 @@ ln -sfn /home/beyonix/apps/beyonix-releases/<release-anterior> ~/apps/beyonix-cu
   && mv -T ~/apps/beyonix-current.tmp ~/apps/beyonix-current && pm2 restart beyonix && pm2 save
 ```
 
-## Mantenimiento
+## Mantenimiento: limpieza de releases viejas
 
-Cada release ocupa ~1,1 GB y no se borra sola. Cuando el control de disco lo pida, borrar
-manualmente releases viejas de `~/apps/beyonix-releases/` (nunca la activa ni la anterior:
-`readlink ~/apps/beyonix-current` y la última línea de `.deploy-history`) y sus `incoming-*`.
+Cada release ocupa ~1,1 GB (casi todo `node_modules` + `.next`). La limpieza es automática:
+
+- **Después de un despliegue exitoso** (la versión nueva ya activa y verificada). Si falla, se avisa
+  pero el despliegue sigue siendo exitoso.
+- **Antes de compilar**, sólo si el VPS tiene menos de 4 GB libres. Después se vuelve a medir; si
+  sigue sin alcanzar, el despliegue se detiene con un mensaje claro sin compilar ni transferir.
+- **Manual:** `.\deploy-beyonix.ps1 -Limpiar -Simular` (muestra qué se borraría, no borra nada) y
+  `.\deploy-beyonix.ps1 -Limpiar`.
+
+Política (`remote-cleanup.sh`). **Se conservan siempre:**
+1. la release activa (`readlink -f ~/apps/beyonix-current`; PM2 tiene que usar ese enlace);
+2. la de rollback: el `prev=` de la última línea de `.deploy-history` que activó la actual (la misma
+   que usa `-Rollback`);
+3. las preparadas pendientes (`-SoloPreparar`): verificadas después de activar la actual; de cada
+   commit, la más nueva;
+4. un respaldo adicional: la release verificada más nueva de otro commit (que además pase la misma
+   validación que exige `-Rollback`);
+5. lo que se está preparando: directorios sin `.release-info` e `incoming-*` de menos de 6 h, y los
+   `incoming-*` que guardan el manifest de una release conservada.
+
+Se borra el resto de lo que tenga nombre de release (`<sha7>-<fecha>-<hora>`), `incoming-*` o
+`.trash-*`, siempre que sea un directorio real (no un enlace) dentro de `beyonix-releases`.
+**Nunca** se toca `~/apps/beyonix` (versión original y dueña del `.env.local`), `.env.local`,
+backups, `~/rollback`, logs, `.deploy-history`, `.last-switch` ni archivos con otros nombres.
+
+Seguridad:
+- Se detiene sin borrar nada (tampoco en `-Simular`) si el estado no es confiable: sin enlace
+  activo, la activa fuera de `beyonix-releases`, PM2 sin el proceso o con otro directorio, la activa
+  sin registro en `.deploy-history`, o el rollback registrado (`prev=`) ausente, inválido (misma
+  validación que exige `-Rollback`) o que no es la carpeta real registrada (p. ej. un enlace).
+- Toma el bloqueo de cambios de versión y, en modo exclusivo, el de armado (`.prepare.lock`, que
+  `remote-assemble.sh` toma compartido mientras arma). Si alguno está tomado: "ocupado", nada borrado.
+- Cada eliminación primero renombra el directorio a `.trash-*` (atómico) y después lo borra; si se
+  corta o falla, queda apartado (nunca una release a medias con su nombre) y la próxima limpieza
+  lo termina de borrar. Antes de cada una se vuelve a comprobar que la activa no cambió.
+- Registro: `~/apps/beyonix-releases/.cleanup-history` (cada directorio eliminado con su tamaño y
+  motivo, y una línea por ejecución con lo liberado y el espacio libre antes/después) y el log de
+  la ejecución en `.deploy-logs/<id>-cleanup.log`.
+
+Lo que **no** es una release y también ocupa espacio (no se limpia automáticamente): `~/apps/beyonix`
+(~1,4 GB, versión original; necesaria por el `.env.local` y como último recurso) y la caché de npm
+`~/.npm` (~1,5 GB; se puede regenerar, pero acelera `npm ci` cuando cambia el `package-lock`).
 
 ## Pruebas de los scripts
 
 ```bash
-bash deploy/release/tests/run-local-tests.sh       # PC: argumentos, migraciones, timeout, bloqueo, red, entorno, aprobaciones
+bash deploy/release/tests/run-local-tests.sh       # PC: argumentos, migraciones, timeout, bloqueo, red, entorno, aprobaciones, espacio
+bash deploy/release/tests/run-cleanup-tests.sh     # PC o Linux: política de limpieza, bloqueos, fallos (sandbox en /tmp)
 # VPS, en un sandbox aislado de /tmp (pm2 y curl falsos; no toca la tienda ni el PM2 real):
 tar -C deploy/release -c remote-lib.sh remote-switch.sh remote-rollback.sh remote-status.sh remote-assemble.sh tests/run-vps-sandbox-tests.sh \
   | ssh -i ~/.ssh/beyonix_donweb_trabajo -o IdentitiesOnly=yes -p 5799 beyonix@168.181.186.203 \
@@ -198,6 +240,7 @@ tar -C deploy/release -c remote-lib.sh remote-switch.sh remote-rollback.sh remot
 | `remote-assemble.sh` | VPS | Arma la release nueva (npm ci con memoria limitada) y la prueba en el 3001. |
 | `remote-switch.sh` | VPS | Activa la release bajo bloqueo; rollback automático si algo falla. |
 | `remote-rollback.sh` | VPS | Vuelve a una versión ya compilada y verificada. |
+| `remote-cleanup.sh` | VPS | Borra releases viejas con la política de retención (simulable). |
 
 Los scripts del VPS se envían por SSH en cada ejecución (con `remote-lib.sh` delante): no se
 instala nada en el servidor.

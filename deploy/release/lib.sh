@@ -161,6 +161,7 @@ stage_label() {
     ventana) echo "Espera de ventana segura" ;;
     activacion) echo "Activación (bloqueo, PM2, estabilidad)" ;;
     verificacion) echo "Verificación pública" ;;
+    limpieza_releases) echo "VPS: limpieza de releases viejas" ;;
     *) echo "$1" ;;
   esac
 }

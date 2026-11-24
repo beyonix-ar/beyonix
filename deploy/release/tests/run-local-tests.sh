@@ -506,7 +506,20 @@ case "$body" in
     [ -f "$E2E_DIR/status.extra" ] && cat "$E2E_DIR/status.extra"
     printf 'pm2_status=online\npm2_cwd=/home/beyonix/apps/beyonix-current\nlocal_home=200\nswitch_lock=libre\n'
     printf 'active_target=/home/beyonix/apps/beyonix-releases/1234567-20260101-000000\nactive_build=build-activo\n'
-    printf 'disk_free_mb=9000\nmem_available_mb=2000\nactive_sha=%s\npublic_env_hash=%s\n' "$(cat "$E2E_DIR/active_sha")" "$(cat "$E2E_DIR/public_hash")" ;;
+    printf 'disk_free_mb=%s\nmem_available_mb=2000\nactive_sha=%s\npublic_env_hash=%s\n' "$(cat "$E2E_DIR/disk_free" 2>/dev/null || echo 9000)" "$(cat "$E2E_DIR/active_sha")" "$(cat "$E2E_DIR/public_hash")" ;;
+  *'LIMPIEZA resultado='*)
+    # remote-cleanup.sh falso: registra los argumentos y "libera" lo indicado en cleanup_frees.
+    echo "cleanup ${@: -1}" >> "$E2E_DIR/ssh.log"
+    [ -f "$E2E_DIR/cleanup_frees" ] && cp "$E2E_DIR/cleanup_frees" "$E2E_DIR/disk_free"
+    [ "$(cat "$E2E_DIR/cleanup_result" 2>/dev/null)" = ocupado ] && echo "OCUPADO: hay un cambio de versión en curso; no se borra nada"
+    # Como remote-cleanup.sh real: rollback registrado ausente/inválido => DETENER, rc 1, sin plan.
+    if [ "$(cat "$E2E_DIR/cleanup_result" 2>/dev/null)" = rollback_invalido ]; then
+      echo "DETENER: la release de rollback registrada (/home/beyonix/apps/beyonix-releases/919a98b-20261123-194830) no existe o no es válida (no existe); no se borra nada"
+      exit 1
+    fi
+    printf 'ELIMINAR vieja-1 mb=1100 motivo=vieja\nLIMPIEZA resultado=%s eliminadas=2 liberado_mb=2200 libre_mb=%s liberable_mb=2200\n' \
+      "$(cat "$E2E_DIR/cleanup_result" 2>/dev/null || echo ok)" "$(cat "$E2E_DIR/disk_free" 2>/dev/null || echo 9000)"
+    exit "$(cat "$E2E_DIR/cleanup_rc" 2>/dev/null || echo 0)" ;;
   *) echo "NO-PERMITIDO ssh $*" | tee -a "$E2E_DIR/todo.log" >> "$E2E_DIR/ssh.log"; exit 97 ;;
 esac
 SH
@@ -623,6 +636,54 @@ PS
   out="$(e2e --validacion-completa)"; rc=$?
   check "(8) variables públicas distintas de producción => se detiene antes de validar" '[ $rc = 1 ] && grep -q "variables públicas" <<< "$out" && [ -z "$(marcas)" ]'
   check "(8) en ninguna ejecución hubo ssh/scp/curl/npx fuera de la lectura de estado y migraciones" '[ ! -s "$E/todo.log" ]'
+
+  echo "19. deploy.sh aislado: espacio en el VPS y limpieza de releases"
+  grep -E '^NEXT_PUBLIC_[A-Z0-9_]*=' "$R/.env.local" | tr -d '\r' | sed -E 's/[[:space:]]+$//' | LC_ALL=C sort | sha256sum | cut -c1-16 > "$E/public_hash"
+  cleanups() { grep -c '^cleanup ' "$E/ssh.log"; }
+  echo 0000000000000000000000000000000000000000 > "$E/active_sha"
+  reset_space() { rm -f "$E/disk_free" "$E/cleanup_frees" "$E/cleanup_result" "$E/cleanup_rc"; }
+  reset_space; echo 3700 > "$E/disk_free"; echo 9000 > "$E/cleanup_frees"
+  out="$(FAIL_LINT=1 e2e --solo-preparar --validacion-completa)"; rc=$?
+  check "poco espacio => limpia (ejecutar, mínimo 4000) antes de compilar y sigue" 'grep -qx "cleanup bash -s -- [0-9a-f-]* ejecutar 4000" "$E/ssh.log" && grep -q "Espacio liberado: 2 directorios eliminados, 2200 MB liberados" <<< "$out" && [ "$(marcas)" = lint ]'
+  check "vuelve a leer el estado después de limpiar" '[ "$(grep -c "^status$" "$E/ssh.log")" = 2 ]'
+  reset_space; echo 3700 > "$E/disk_free"; echo 3900 > "$E/cleanup_frees"; echo insuficiente > "$E/cleanup_result"; echo 7 > "$E/cleanup_rc"
+  out="$(e2e --solo-preparar)"; rc=$?
+  check "la limpieza no alcanza => se detiene con mensaje claro, sin validar ni compilar" '[ $rc = 1 ] && grep -q "menos de 4 GB libres en el VPS (3900 MB) y la limpieza automática no pudo liberar más de forma segura" <<< "$out" && grep -q "Limpiar -Simular" <<< "$out" && [ -z "$(marcas)" ] && no_build'
+  reset_space; echo 3700 > "$E/disk_free"; echo 6 > "$E/cleanup_rc"; echo ocupado > "$E/cleanup_result"
+  out="$(e2e)"; rc=$?
+  check "limpieza ocupada (otro cambio en curso) => se detiene sin validar e informa el motivo" '[ $rc = 1 ] && grep -q "menos de 4 GB libres.*(hay un cambio de versión en curso; no se borra nada)" <<< "$out" && [ -z "$(marcas)" ]'
+  reset_space; echo 9000 > "$E/disk_free"
+  out="$(FAIL_LINT=1 e2e --solo-preparar --validacion-completa)"
+  check "espacio suficiente => no limpia" '[ "$(cleanups)" = 0 ]'
+  reset_space; echo 1000 > "$E/disk_free"; echo "$RSHA" > "$E/active_sha"
+  out="$(e2e)"; rc=$?
+  check "commit ya activo (nada que desplegar) => no limpia aunque haya poco espacio" '[ $rc = 0 ] && [ "$(cleanups)" = 0 ] && grep -q "ya tiene esta versión" <<< "$out"'
+  echo 0000000000000000000000000000000000000000 > "$E/active_sha"
+  reset_space
+  out="$(e2e --limpiar --simular)"; rc=$?
+  check "-Limpiar -Simular => sólo la simulación remota, sin validar ni compilar" '[ $rc = 0 ] && grep -qx "cleanup bash -s -- [0-9a-f-]* simular 0" "$E/ssh.log" && [ "$(wc -l < "$E/ssh.log")" = 1 ] && grep -q "Simulación: se liberarían 2200 MB" <<< "$out" && [ -z "$(marcas)" ]'
+  out="$(e2e --limpiar)"; rc=$?
+  check "-Limpiar => ejecuta y resume lo eliminado" '[ $rc = 0 ] && grep -qx "cleanup bash -s -- [0-9a-f-]* ejecutar 0" "$E/ssh.log" && grep -q "Limpieza completada: 2 directorios eliminados, 2200 MB liberados" <<< "$out"'
+  echo 8 > "$E/cleanup_rc"; echo parcial > "$E/cleanup_result"
+  out="$(e2e --limpiar)"; rc=$?
+  check "-Limpiar con fallo parcial => error claro (rc 1)" '[ $rc = 1 ] && grep -q "no se pudieron borrar" <<< "$out"'
+  reset_space
+  for bad in "--limpiar --validacion-completa" "--limpiar --forzar" "--validacion-completa --limpiar"; do
+    out="$(e2e $bad)"; rc=$?
+    check "argumentos inválidos ($bad) => uso, sin conectar" '[ $rc = 2 ] && [ ! -s "$E/ssh.log" ]'
+  done
+  reset_space; echo rollback_invalido > "$E/cleanup_result"
+  for args in "--limpiar --simular" "--limpiar"; do
+    out="$(e2e $args)"; rc=$?
+    check "$args con rollback registrado ausente/inválido => error con el motivo, rc 1, sin informar limpieza" \
+      '[ $rc = 1 ] && grep -q "Error: la limpieza no se completó: la release de rollback registrada .* no existe o no es válida" <<< "$out" && ! grep -q "Simulación:\|Limpieza completada\|Resultado:" <<< "$out" && [ "$(wc -l < "$E/ssh.log")" = 1 ]'
+  done
+  echo 3700 > "$E/disk_free"
+  out="$(e2e --solo-preparar)"; rc=$?
+  check "deploy con poco espacio y rollback inválido => se detiene antes de compilar con el motivo" \
+    '[ $rc = 1 ] && grep -q "menos de 4 GB libres.*rollback registrada.*no se borra nada" <<< "$out" && [ -z "$(marcas)" ] && no_build'
+  reset_space
+  check "ninguna prueba de limpieza hizo scp/curl/npx no permitidos" '[ ! -s "$E/todo.log" ]'
 fi
 echo
 echo "RESULTADO LOCAL: $PASS OK, $FAIL fallos"

@@ -26,6 +26,8 @@ main() {
   [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || stop "SHA inválido"
   in="$(realpath -e -- "$2" 2>/dev/null)" || stop "incoming inexistente"
   [ "${in%/*}" = "$REL_ROOT" ] && [[ "${in##*/}" =~ ^incoming-[0-9]{8}-[0-9]{6}$ ]] || stop "incoming fuera de $REL_ROOT/incoming-*"
+  # Mientras se arma (hasta terminar el proceso), la limpieza automática no puede borrar nada.
+  acquire_prepare_lock_shared || stop "hay una limpieza de releases en curso; volvé a intentar en unos minutos"
 
   [ -L "$CURRENT" ] || stop "no existe el enlace $CURRENT"
   active="$(readlink -f "$CURRENT")"

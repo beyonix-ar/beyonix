@@ -18,7 +18,11 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MODE=desplegar
 ROLLBACK_TARGET=-
 FORCE_VALIDATION=0
-usage() { echo "uso: deploy.sh [--solo-preparar] [--validacion-completa] | --estado | --rollback [release]"; exit 2; }
+CLEANUP_MODE=ejecutar
+# Espacio libre que exige un despliegue antes de compilar (la release nueva ocupa ~1,1 GB y el
+# armado en el VPS exige además 3 GB libres).
+MIN_FREE_MB=4000
+usage() { echo "uso: deploy.sh [--solo-preparar] [--validacion-completa] | --estado | --rollback [release] | --limpiar [--simular]"; exit 2; }
 if [ "${1:-}" = --validacion-completa ]; then FORCE_VALIDATION=1; shift; fi
 case "${1:-}" in
   "") ;;
@@ -26,6 +30,10 @@ case "${1:-}" in
     [ "${2:-}" = --validacion-completa ] && { FORCE_VALIDATION=1; shift; }
     [ $# -le 1 ] || usage ;;
   --estado) MODE=estado; [ $# = 1 ] && [ "$FORCE_VALIDATION" = 0 ] || usage ;;
+  --limpiar)
+    MODE=limpiar; CLEANUP_MODE=ejecutar
+    [ "$FORCE_VALIDATION" = 0 ] && [ $# -le 2 ] || usage
+    case "${2:-}" in "") ;; --simular) CLEANUP_MODE=simular ;; *) usage ;; esac ;;
   --rollback)
     MODE=rollback
     [ $# -le 2 ] && [ "$FORCE_VALIDATION" = 0 ] || usage
@@ -133,6 +141,39 @@ remote() {
 kv() { sed -n "s/^$1=//p" <<< "$2" | sed -n 1p; }
 first_stop() { grep -E '^(DETENER|ALERTA)' <<< "$OUT" | sed -n 1p; }
 fetch_status() { remote remote-status.sh "$1" && printf '%s\n' "$OUT"; }
+# Limpieza de releases viejas en el VPS (política en remote-cleanup.sh). Deja el código en
+# CLEANUP_RC y el resumen en CLEANUP_SUMMARY; nunca aborta por sí misma.
+run_cleanup() { # run_cleanup <simular|ejecutar> <libre-mínimo-mb>
+  remote remote-cleanup.sh "$DEPLOY_ID" "$1" "$2"
+  CLEANUP_RC=$?
+  CLEANUP_SUMMARY="$(grep -E '^LIMPIEZA ' <<< "$OUT" | sed -n '$p')"
+  # El motivo se calcula ya: llamadas remotas posteriores reemplazan $OUT.
+  CLEANUP_PROBLEM="$(cleanup_problem)"
+  log "limpieza rc=$CLEANUP_RC ${CLEANUP_SUMMARY:-sin resumen}"
+}
+cleanup_freed_text() { # "N releases/directorios, X MB" a partir del resumen
+  local n mb
+  n="$(sed -nE 's/.* eliminadas=([0-9]+).*/\1/p' <<< "$CLEANUP_SUMMARY")"
+  mb="$(sed -nE 's/.* liberado_mb=([0-9]+).*/\1/p' <<< "$CLEANUP_SUMMARY")"
+  printf '%s directorios eliminados, %s MB liberados' "${n:-0}" "${mb:-0}"
+}
+cleanup_problem() { # motivo legible de una limpieza que no terminó bien (lee $OUT de run_cleanup)
+  local why
+  case "$CLEANUP_RC" in
+    0|7) why="" ;;
+    6) why="$(grep -E '^OCUPADO' <<< "$OUT" | sed -n 1p | sed 's/^OCUPADO: //')"; why="${why:-otro cambio de versión o armado en curso}" ;;
+    8) why="algunos directorios no se pudieron borrar (ver log)" ;;
+    255) why="se perdió la conexión con el VPS" ;;
+    *) why="$(first_stop | sed 's/^DETENER: //')"; why="${why:-error de la limpieza (código $CLEANUP_RC)}" ;;
+  esac
+  printf '%s' "$why"
+}
+cleanup_problem_or_result() {
+  case "$CLEANUP_RC" in
+    0|7) echo "sólo quedan releases protegidas o en uso; $(cleanup_freed_text)" ;;
+    *) echo "$CLEANUP_PROBLEM" ;;
+  esac
+}
 
 mkdir "$LOCK" 2>/dev/null || { echo "Error: ya hay otro despliegue en curso en esta PC (si no es así, borrá $(cygpath -w "$LOCK"))."; exit 1; }
 trap finish EXIT
@@ -146,6 +187,29 @@ if [ "$MODE" = estado ]; then
   echo "Último cambio: ${last:-ninguno registrado con este sistema}"
   [ "$(kv switch_lock "$OUT")" = tomado ] && echo "Hay un cambio de versión en curso en este momento."
   exit 0
+fi
+
+# ───────────────────────── Limpieza manual de releases ─────────────────────────
+if [ "$MODE" = limpiar ]; then
+  if [ "$CLEANUP_MODE" = simular ]; then
+    say "Simulando la limpieza de releases viejas (no se borra nada)."
+  else
+    say "Limpiando releases viejas del VPS."
+  fi
+  run_cleanup "$CLEANUP_MODE" 0
+  grep -E '^(CONSERVAR|ELIMINAR|eliminada|ERROR|AVISO|OCUPADO|DETENER)' <<< "$OUT" | sed 's/^/  /'
+  case "$CLEANUP_RC" in
+    0|7)
+      if [ "$CLEANUP_MODE" = simular ]; then
+        echo "Simulación: se liberarían $(sed -nE 's/.* liberable_mb=([0-9]+).*/\1/p' <<< "$CLEANUP_SUMMARY") MB (libre ahora: $(sed -nE 's/.* libre_mb=([0-9]+).*/\1/p' <<< "$CLEANUP_SUMMARY") MB)."
+      else
+        echo "Limpieza completada: $(cleanup_freed_text). Libre: $(sed -nE 's/.* libre_mb=([0-9]+).*/\1/p' <<< "$CLEANUP_SUMMARY") MB."
+      fi
+      echo "Detalle: $(winlog)"; exit 0 ;;
+    *) echo "Error: la limpieza no se completó: $CLEANUP_PROBLEM."
+       [ -n "$CLEANUP_SUMMARY" ] && echo "Resultado: $(cleanup_freed_text)."
+       echo "Detalle: $(winlog)"; exit 1 ;;
+  esac
 fi
 
 # ───────────────────────── Rollback manual ─────────────────────────
@@ -203,7 +267,6 @@ STATUS="$OUT"
 ACTIVE="$(kv active_target "$STATUS")"
 ACTIVE_BUILD="$(kv active_build "$STATUS")"
 is_release_path "$ACTIVE" && [ -n "$ACTIVE_BUILD" ] || abort "no se pudo leer la versión activa"
-[ "$(kv disk_free_mb "$STATUS")" -ge 4000 ] || abort "menos de 4 GB libres en el VPS (limpiar releases viejas manualmente)"
 [ "$(kv mem_available_mb "$STATUS")" -ge 900 ] || abort "memoria insuficiente en el VPS para verificar la versión nueva"
 ONLY_VALIDATE=0
 if [ "$(kv active_sha "$STATUS")" = "$SHA" ]; then
@@ -218,6 +281,24 @@ if [ "$(kv active_sha "$STATUS")" = "$SHA" ]; then
   else
     log "AVISO: el commit ya está activo; se prepara igual (--solo-preparar)"
   fi
+fi
+# Espacio: hace falta para armar la release nueva (no para sólo validar). Si no alcanza, se limpian
+# releases viejas con la política segura (nunca la activa, el rollback ni las preparadas pendientes)
+# y se vuelve a medir; si sigue sin alcanzar, se detiene antes de compilar.
+FREE_MB="$(kv disk_free_mb "$STATUS")"
+[[ "$FREE_MB" =~ ^[0-9]+$ ]] || abort "no se pudo leer el espacio libre del VPS"
+if [ "$ONLY_VALIDATE" = 0 ] && [ "$FREE_MB" -lt "$MIN_FREE_MB" ]; then
+  say "Liberando espacio en el VPS (libre: $FREE_MB MB; se necesitan $MIN_FREE_MB MB)."
+  run_cleanup ejecutar "$MIN_FREE_MB"
+  remote remote-status.sh || abort "no se pudo leer el estado del VPS después de la limpieza"
+  STATUS="$OUT"
+  FREE_MB="$(kv disk_free_mb "$STATUS")"
+  [[ "$FREE_MB" =~ ^[0-9]+$ ]] || abort "no se pudo leer el espacio libre del VPS después de la limpieza"
+  [ "$(kv active_target "$STATUS")" = "$ACTIVE" ] || abort "la versión activa cambió mientras se liberaba espacio"
+  if [ "$FREE_MB" -lt "$MIN_FREE_MB" ]; then
+    abort "menos de 4 GB libres en el VPS ($FREE_MB MB) y la limpieza automática no pudo liberar más de forma segura ($(cleanup_problem_or_result)). Revisá con: .\\deploy-beyonix.ps1 -Limpiar -Simular"
+  fi
+  echo "Espacio liberado: $(cleanup_freed_text) (libre: $FREE_MB MB)."
 fi
 t_end vps
 
@@ -425,5 +506,14 @@ say "Actualización completada."
 echo "Validación: $VALIDATION_DONE"
 echo "Versión: $(git -C "$REPO" rev-parse --short HEAD) (build $NEW_BUILD)"
 [ "$SWITCH_RC" = 5 ] && echo "Aviso: pm2 save falló; tras un reinicio del VPS revisar con pm2 list."
+# Limpieza posterior: la versión nueva ya está activa y verificada. Conserva la nueva, la anterior
+# (rollback) y lo pendiente; un fallo acá nunca convierte el despliegue en error.
+t_begin
+run_cleanup ejecutar 0
+t_end limpieza_releases
+case "$CLEANUP_RC" in
+  0|7) echo "Limpieza de releases viejas: $(cleanup_freed_text)." ;;
+  *) echo "Aviso: la limpieza de releases viejas no se completó ($CLEANUP_PROBLEM); el despliegue está OK. Reintentar con: .\\deploy-beyonix.ps1 -Limpiar" ;;
+esac
 echo "Detalle: $(winlog)"
 exit 0
