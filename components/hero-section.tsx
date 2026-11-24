@@ -50,11 +50,17 @@ const formatPrice = (price: number) =>
 interface HeroSectionProps {
   featuredProduct: SupabaseProducto | null
   onOpenPreview: (product: SupabaseProducto) => void
+  /**
+   * Hay una campaña arriba: el banner ya deja el espacio del header y es el
+   * protagonista, así que el Hero pierde la altura de primera pantalla.
+   */
+  compact?: boolean
 }
 
 export function HeroSection({
   featuredProduct,
   onOpenPreview,
+  compact = false,
 }: HeroSectionProps) {
   const defaultVariant = featuredProduct
     ? getDefaultVariantOption(featuredProduct)
@@ -100,10 +106,14 @@ export function HeroSection({
   }
 
   return (
-    <section className="relative overflow-hidden pt-18 lg:pt-20">
-      <div className="container relative mx-auto grid min-h-[clamp(620px,78vh,840px)] items-center gap-[clamp(2.5rem,4vw,4.5rem)] py-[clamp(3.75rem,5.5vw,5.5rem)] lg:min-h-[clamp(480px,calc(100svh-5rem),840px)] lg:grid-cols-hero-premium lg:py-[clamp(2rem,min(5.5vw,6svh),5.5rem)]">
+    <section className={compact ? "relative overflow-hidden" : "relative overflow-hidden pt-18 lg:pt-20"} data-hero-compact={compact ? "" : undefined}>
+      <div className={compact
+        ? "container relative mx-auto grid items-center gap-[clamp(2rem,3.5vw,3.5rem)] py-[clamp(2.25rem,4vw,3.75rem)] lg:grid-cols-hero-premium"
+        : "container relative mx-auto grid min-h-[clamp(620px,78vh,840px)] items-center gap-[clamp(2.5rem,4vw,4.5rem)] py-[clamp(3.75rem,5.5vw,5.5rem)] lg:min-h-[clamp(480px,calc(100svh-5rem),840px)] lg:grid-cols-hero-premium lg:py-[clamp(2rem,min(5.5vw,6svh),5.5rem)]"}>
         <div className="max-w-3xl">
-          <h1 className="beyonix-modal-title mb-5 max-w-3xl text-[clamp(2.4rem,4.3vw,4.65rem)] font-bold lg:text-[clamp(2.4rem,calc(1.9vw+3.7svh),4.65rem)] leading-1-1 tracking-tight text-white">
+          <h1 className={compact
+            ? "beyonix-modal-title mb-4 max-w-3xl text-[clamp(2rem,3.2vw,3.4rem)] font-bold leading-1-1 tracking-tight text-white"
+            : "beyonix-modal-title mb-5 max-w-3xl text-[clamp(2.4rem,4.3vw,4.65rem)] font-bold lg:text-[clamp(2.4rem,calc(1.9vw+3.7svh),4.65rem)] leading-1-1 tracking-tight text-white"}>
             Tecnología para tu comodidad
           </h1>
 
@@ -194,7 +204,8 @@ export function HeroSection({
                     alt={featuredProduct.nombre}
                     sizes="(min-width: 1024px) 420px, calc(100vw - 48px)"
                     className="object-contain transition-transform duration-500 group-hover:scale-[1.025]"
-                    priority
+                    // Con campaña, la imagen principal es la del banner (no compiten por prioridad).
+                    preload={!compact}
                   />
                 </div>
               </button>

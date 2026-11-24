@@ -7,6 +7,7 @@ import {
   LOCAL_DELIVERY_INCIDENT_COMMENT_MAX,
   LOCAL_DELIVERY_INCIDENT_REASON_LABELS,
   LOCAL_DELIVERY_INCIDENT_REASONS,
+  type CourierPhone,
   type LocalDeliveryCourierAction,
   type LocalDeliveryIncidentReason,
 } from "@/lib/shipping/local-delivery-outcome"
@@ -48,7 +49,53 @@ export function CourierPageFrame({ children }: { children: ReactNode }) {
   )
 }
 
-const BIG_BUTTON = "flex min-h-16 w-full cursor-pointer items-center justify-center gap-3 rounded-2xl border-2 px-4 text-xl font-black transition active:scale-[0.99] disabled:cursor-wait disabled:opacity-60"
+/**
+ * Teléfono del destinatario: "Llamar" abre el marcador (tel:, nunca llama
+ * solo) y "Copiar número" lo copia con confirmación. Sin teléfono utilizable
+ * no hay enlaces; las acciones de entrega siguen disponibles.
+ */
+function CourierPhoneField({ phone }: { phone: CourierPhone | null }) {
+  const [copy, setCopy] = useState<"idle" | "copied" | "failed">("idle")
+
+  const copyNumber = async () => {
+    if (!phone) return
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("CLIPBOARD_UNAVAILABLE")
+      await navigator.clipboard.writeText(phone.tel)
+      setCopy("copied")
+    } catch {
+      setCopy("failed")
+    }
+  }
+
+  return (
+    <div data-courier-phone="">
+      <dt className="text-xs font-bold uppercase tracking-widest text-neutral-500">Teléfono</dt>
+      {phone ? (
+        <>
+          <dd className="text-lg font-bold tabular-nums" data-courier-phone-number="">{phone.display}</dd>
+          <dd className="mt-2 grid grid-cols-2 gap-2">
+            <a href={`tel:${phone.tel}`} className="flex min-h-12 items-center justify-center gap-2 rounded-xl border-2 border-emerald-600 bg-emerald-600 px-3 text-base font-black text-white">
+              <span aria-hidden>📞</span> Llamar
+            </a>
+            <button type="button" onClick={() => void copyNumber()} className="flex min-h-12 cursor-pointer items-center justify-center rounded-xl border-2 border-neutral-300 bg-white px-3 text-base font-black text-neutral-900">
+              {copy === "copied" ? "Número copiado" : "Copiar número"}
+            </button>
+          </dd>
+          {copy === "failed" && (
+            <dd role="status" className="mt-1 text-sm font-bold text-amber-800" data-courier-phone-copy-error="">
+              No se pudo copiar. Mantené apretado el número para copiarlo.
+            </dd>
+          )}
+        </>
+      ) : (
+        <dd className="text-base font-bold text-neutral-600" data-courier-phone-missing="">Teléfono no disponible</dd>
+      )}
+    </div>
+  )
+}
+
+const BIG_BUTTON ="flex min-h-16 w-full cursor-pointer items-center justify-center gap-3 rounded-2xl border-2 px-4 text-xl font-black transition active:scale-[0.99] disabled:cursor-wait disabled:opacity-60"
 
 export function CourierDeliveryClient({ token, initialView }: { token: string; initialView: CourierDeliveryView }) {
   const [view, setView] = useState(initialView)
@@ -117,6 +164,8 @@ export function CourierDeliveryClient({ token, initialView }: { token: string; i
               <dd className="text-base leading-snug">{view.reference}</dd>
             </div>
           )}
+          {/* Sólo con la entrega en curso: el servidor no envía el teléfono en otro estado. */}
+          {view.screen.kind === "actions" && <CourierPhoneField key={view.phone?.tel ?? "none"} phone={view.phone} />}
           {view.parcels !== null && (
             <div>
               <dt className="text-xs font-bold uppercase tracking-widest text-neutral-500">Bultos</dt>

@@ -11,15 +11,22 @@ import { getImageUrlFromMediaIndex } from "@/lib/products/product-video"
 import { BenefitsSection } from "@/components/benefits-section"
 import { CategoriesSection } from "@/components/categories-section"
 import { HeroSection } from "@/components/hero-section"
+import { HomeCampaignBanner, useHomeCampaign } from "@/components/home-campaign-banner"
+import type { HomeCampaignState } from "@/lib/banners/public-banners"
 import { ProductDetailsModal } from "@/components/products/product-details-modal"
 import { ProductsSection } from "@/components/products-section"
 import { ReviewsSection } from "@/components/reviews-section"
 
 interface HomeClientProps {
   featuredProduct: SupabaseProducto | null
+  /** Sin campaña vigente el Home queda igual que siempre (sin espacio reservado). */
+  homeCampaign?: HomeCampaignState
 }
 
-export function HomeClient({ featuredProduct }: HomeClientProps) {
+const NO_HOME_CAMPAIGN: HomeCampaignState = { banner: null, nextChangeAt: null, serverNow: "1970-01-01T00:00:00.000Z" }
+
+export function HomeClient({ featuredProduct, homeCampaign = NO_HOME_CAMPAIGN }: HomeClientProps) {
+  const campaign = useHomeCampaign(homeCampaign).banner
   const {
     addToCart,
     removeFromCart,
@@ -60,9 +67,11 @@ export function HomeClient({ featuredProduct }: HomeClientProps) {
   return (
     <>
       <section id="inicio">
+        {campaign ? <HomeCampaignBanner key={campaign.id} banner={campaign} /> : null}
         <HeroSection
           featuredProduct={featuredProduct}
           onOpenPreview={openDetails}
+          compact={Boolean(campaign)}
         />
       </section>
 

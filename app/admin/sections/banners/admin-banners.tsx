@@ -13,9 +13,13 @@ import {
 
 import { supabase } from "@/lib/supabase/client"
 import { CATALOG_BANNER_HELP } from "@/lib/products/catalog-banner-spec"
+import { AdminHomeCampaigns } from "./admin-home-campaigns"
+import { BANNER_FILE_ACCEPT, uploadBannerImage } from "./banner-upload"
+import { parseBannerSortOrder } from "@/lib/banners/site-banners"
 import {
   adminPageClassName,
   AdminBadge,
+  AdminButton,
   AdminCard,
   AdminDangerButton,
   AdminEmptyState,
@@ -41,21 +45,40 @@ interface AdminBanner {
 
 const PRODUCTS_PLACEMENT = "products"
 const DEFAULT_ALT_TEXT = "Banner de productos BEYONIX"
-const STORAGE_BUCKET = "site-banners"
 
-function getCleanFileName(fileName: string) {
-  return fileName
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9._-]+/g, "-")
-    .replace(/-+/g, "-")
-    .toLowerCase()
+type BannerView = "home" | "products"
+
+/** Banners del sitio: campa\u00f1as programadas del Home y carrusel de Productos (sin cambios). */
+export function AdminBanners({ embedded = false }: { embedded?: boolean } = {}) {
+  const [view, setView] = useState<BannerView>("home")
+  return (
+    <div className={embedded ? "space-y-3" : adminPageClassName}>
+      {!embedded ? <AdminPageHeader eyebrow="Visuales" title="Banners" /> : null}
+      <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Ubicaci\u00f3n del banner">
+        {([["home", "Home"], ["products", "Productos"]] as const).map(([value, label]) => (
+          <AdminButton
+            key={value}
+            role="tab"
+            aria-selected={view === value}
+            variant={view === value ? "primary" : "ghost"}
+            size="sm"
+            onClick={() => setView(value)}
+          >
+            {label}
+          </AdminButton>
+        ))}
+      </div>
+      {view === "home" ? <AdminHomeCampaigns /> : <ProductsBanners embedded />}
+    </div>
+  )
 }
 
-export function AdminBanners({ embedded = false }: { embedded?: boolean } = {}) {
+function ProductsBanners({ embedded = false }: { embedded?: boolean } = {}) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [banners, setBanners] = useState<AdminBanner[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
+  // Versión (updated_at) abierta en el formulario: la API rechaza guardar sobre una más nueva (409).
+  const [editingVersion, setEditingVersion] = useState<string | null>(null)
   const [imageUrl, setImageUrl] = useState("")
   const [altText, setAltText] = useState(DEFAULT_ALT_TEXT)
   const [active, setActive] = useState(true)
@@ -109,6 +132,7 @@ export function AdminBanners({ embedded = false }: { embedded?: boolean } = {}) 
 
   const resetForm = () => {
     setEditingId(null)
+    setEditingVersion(null)
     setImageUrl("")
     setAltText(DEFAULT_ALT_TEXT)
     setActive(true)
@@ -119,6 +143,7 @@ export function AdminBanners({ embedded = false }: { embedded?: boolean } = {}) 
 
   const handleEdit = (banner: AdminBanner) => {
     setEditingId(banner.legacy ? null : banner.id)
+    setEditingVersion(banner.legacy ? null : banner.updated_at)
     setImageUrl(banner.image_url)
     setAltText(banner.alt_text || DEFAULT_ALT_TEXT)
     setActive(banner.active)
@@ -127,10 +152,21 @@ export function AdminBanners({ embedded = false }: { embedded?: boolean } = {}) 
     setError("")
   }
 
+  /** Otro administrador cambió el banner: no se pisa; se recarga la lista para revisarlo. */
+  const handleConflict = async (errorMessage: string | undefined) => {
+    setError(`${errorMessage ?? "Este banner cambió desde que lo abriste."} Volvé a abrirlo desde la lista para editarlo.`)
+    await loadBanners()
+  }
+
   const persistBanner = async (nextImageUrl: string) => {
-    setSaving(true)
     setMessage("")
     setError("")
+    const parsedOrder = parseBannerSortOrder(sortOrder)
+    if (!parsedOrder.ok) {
+      setError(parsedOrder.error)
+      return false
+    }
+    setSaving(true)
 
     const {
       data: { session },
@@ -155,12 +191,19 @@ export function AdminBanners({ embedded = false }: { embedded?: boolean } = {}) 
         image_url: nextImageUrl,
         alt_text: altText,
         active,
-        sort_order: sortOrder,
+        sort_order: parsedOrder.value,
+        ...(editingId ? { expected_updated_at: editingVersion } : {}),
       }),
     })
     const data = (await response.json()) as {
       banner?: AdminBanner
       error?: string
+    }
+
+    if (response.status === 409) {
+      await handleConflict(data.error)
+      setSaving(false)
+      return false
     }
 
     if (!response.ok || !data.banner) {
@@ -171,6 +214,7 @@ export function AdminBanners({ embedded = false }: { embedded?: boolean } = {}) 
 
     setMessage(editingId ? "Banner actualizado." : "Banner creado.")
     setEditingId(data.banner.id)
+    setEditingVersion(data.banner.updated_at)
     await loadBanners()
     setSaving(false)
     return true
@@ -197,25 +241,16 @@ export function AdminBanners({ embedded = false }: { embedded?: boolean } = {}) 
     setMessage("")
     setError("")
 
-    const extension = file.name.split(".").pop() || "jpg"
-    const path = `${PRODUCTS_PLACEMENT}/${Date.now()}-${getCleanFileName(
-      file.name.replace(new RegExp(`\\.${extension}$`, "i"), "")
-    )}.${extension.toLowerCase()}`
-    const { error: uploadError } = await supabase.storage
-      .from(STORAGE_BUCKET)
-      .upload(path, file, {
-        cacheControl: "3600",
-        upsert: false,
-      })
+    // Tipo real y tamaño validados antes de subir (el bucket y la API lo vuelven a exigir).
+    const uploaded = await uploadBannerImage(file, PRODUCTS_PLACEMENT, "products")
 
-    if (uploadError) {
-      setError(uploadError.message)
+    if (!uploaded.ok) {
+      setError(uploaded.error)
       setUploading(false)
       return
     }
 
-    const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path)
-    const publicUrl = data.publicUrl
+    const publicUrl = uploaded.url
 
     setImageUrl(publicUrl)
     const saved = await persistBanner(publicUrl)
@@ -297,9 +332,20 @@ export function AdminBanners({ embedded = false }: { embedded?: boolean } = {}) 
         alt_text: banner.alt_text,
         active: !banner.active,
         sort_order: banner.sort_order,
+        expected_updated_at: banner.updated_at,
       }),
     })
-    const data = (await response.json()) as { error?: string }
+    const data = (await response.json()) as { error?: string; banner?: AdminBanner }
+    // El formulario abierto sobre este mismo banner sigue la versión nueva.
+    if (response.ok && data.banner && editingId === data.banner.id) {
+      setEditingVersion(data.banner.updated_at)
+      setActive(data.banner.active)
+    }
+
+    if (response.status === 409) {
+      await handleConflict(data.error)
+      return
+    }
 
     if (!response.ok) {
       setError(data.error ?? "No se pudo cambiar el estado del banner.")
@@ -350,7 +396,7 @@ export function AdminBanners({ embedded = false }: { embedded?: boolean } = {}) 
               {editingId ? "Editar banner" : "Nuevo banner"}
             </h3>
 
-            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleUpload} />
+            <input ref={fileInputRef} type="file" accept={BANNER_FILE_ACCEPT.products} className="hidden" onChange={handleUpload} />
 
             <div>
               <p className="mb-1.5 text-12px font-black uppercase tracking-widest text-white/52">

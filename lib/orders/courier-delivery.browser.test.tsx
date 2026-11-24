@@ -19,16 +19,24 @@ import { CourierDeliveryClient, CourierPageFrame } from "@/app/delivery/[token]/
 const params = new URLSearchParams(location.search)
 const base = { orderCode: "BX-2041", customerName: "María José Peña", address: "Córdoba 1234 Piso 3 Dto B",
   reference: "Portón verde, timbre 2", locality: "Rosario · CP 2000", parcels: 2 }
+// El servidor sólo envía el teléfono con la entrega en curso (pantalla "actions").
+const phone = { display: "+54 9 341 555-0000", tel: "+5493415550000" }
 const screens = {
-  actions: { ...base, screen: { kind: "actions", failedAttempts: 0 }, failedAttempts: 0 },
-  second: { ...base, screen: { kind: "actions", failedAttempts: 1 }, failedAttempts: 1 },
-  delivered: { ...base, screen: { kind: "delivered" }, failedAttempts: 0 },
-  returning: { ...base, screen: { kind: "returning" }, failedAttempts: 2 },
-  returned: { ...base, screen: { kind: "returned" }, failedAttempts: 2 },
-  incident: { ...base, screen: { kind: "incident" }, failedAttempts: 0 },
-  cancelled: { ...base, screen: { kind: "cancelled" }, failedAttempts: 0 },
-  preparing: { ...base, screen: { kind: "preparing" }, failedAttempts: 0 },
+  actions: { ...base, screen: { kind: "actions", failedAttempts: 0 }, failedAttempts: 0, phone },
+  second: { ...base, screen: { kind: "actions", failedAttempts: 1 }, failedAttempts: 1, phone },
+  nophone: { ...base, screen: { kind: "actions", failedAttempts: 0 }, failedAttempts: 0, phone: null },
+  delivered: { ...base, screen: { kind: "delivered" }, failedAttempts: 0, phone: null },
+  returning: { ...base, screen: { kind: "returning" }, failedAttempts: 2, phone: null },
+  returned: { ...base, screen: { kind: "returned" }, failedAttempts: 2, phone: null },
+  incident: { ...base, screen: { kind: "incident" }, failedAttempts: 0, phone: null },
+  cancelled: { ...base, screen: { kind: "cancelled" }, failedAttempts: 0, phone: null },
+  preparing: { ...base, screen: { kind: "preparing" }, failedAttempts: 0, phone: null },
 }
+// Portapapeles controlado: ?clipboard=deny simula un navegador que no permite copiar.
+window.__copied = []
+Object.defineProperty(navigator, "clipboard", { configurable: true, value: params.get("clipboard") === "deny"
+  ? { writeText: async () => { throw new Error("NotAllowedError") } }
+  : { writeText: async (text) => { window.__copied.push(text) } } })
 window.__requests = []
 window.fetch = async (input, init) => {
   const body = JSON.parse(init.body)
@@ -101,8 +109,10 @@ for (const device of DEVICES) {
       }
       // Nada financiero ni administrativo, ni navegación.
       assert.doesNotMatch(text, /\$|precio|pago|email|@|DNI|CUIT|saldo|Admin|Mis compras|Productos/i)
-      assert.equal(await page.locator("nav, header, footer, a").count(), 0)
-      const buttons = page.getByRole("button")
+      // El único enlace es "Llamar" (tel:) dentro del bloque Teléfono.
+      assert.equal(await page.locator("nav, header, footer, a:not([data-courier-phone] a[href^='tel:'])").count(), 0)
+      assert.equal(await page.locator("[data-courier-phone] a[href^='tel:']").count(), 1)
+      const buttons = page.locator("button:not([data-courier-phone] button)")
       assert.deepEqual((await buttons.allInnerTexts()).map((label) => label.replace(/\s+/g, " ")), ["✅ Entregado", "🏠 Cliente ausente", "⚠️ Problema con la entrega"])
       for (const box of await buttons.evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().toJSON() as DOMRect))) {
         assert.ok(box.height >= 60, `alto ${box.height}`)
@@ -207,8 +217,61 @@ test("pedido ya finalizado o fuera de reparto: sólo estado informativo, sin acc
     try {
       assert.ok((await page.locator("body").innerText()).includes(expected), screen)
       assert.equal(await page.getByRole("button").count(), 0, `${screen}: sin botones`)
+      assert.equal(await page.locator("[data-courier-phone]").count(), 0, `${screen}: sin teléfono`)
+      assert.equal(await page.locator("a[href^='tel:']").count(), 0, `${screen}: sin enlace tel:`)
       assert.deepEqual(errors, [])
       await shot(page, `cadete-final-${screen}`)
     } finally { await page.close() }
   }
+})
+
+test("teléfono: se ve en los datos del destinatario; Llamar abre el marcador (tel:) y Copiar número confirma", async () => {
+  for (const device of DEVICES) {
+    const { page, errors } = await open("actions", device)
+    try {
+      const field = page.locator("[data-courier-phone]")
+      assert.match(await field.innerText(), /Teléfono[\s\S]*\+54 9 341 555-0000/i)
+      const call = field.getByRole("link", { name: "Llamar" })
+      assert.equal(await call.getAttribute("href"), "tel:+5493415550000")
+      assert.equal(await call.getAttribute("target"), null, "no abre otra ventana ni llama solo")
+      await field.getByRole("button", { name: "Copiar número" }).click()
+      await field.getByRole("button", { name: "Número copiado" }).waitFor()
+      assert.deepEqual(await page.evaluate(() => (window as unknown as { __copied: string[] }).__copied), ["+5493415550000"])
+      // Llamar y copiar no envían nada al servidor.
+      assert.deepEqual(await requests(page), [])
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${device.name}: sin desborde`)
+      assert.deepEqual(errors, [])
+      await shot(page, `cadete-telefono-${device.name}`)
+    } finally { await page.close() }
+  }
+})
+
+test("teléfono: si el navegador no deja copiar, avisa; sin teléfono muestra 'Teléfono no disponible' y la entrega sigue", async () => {
+  let { page, errors } = await open("actions&clipboard=deny", DEVICES[1])
+  try {
+    await page.getByRole("button", { name: "Copiar número" }).click()
+    await page.locator("[data-courier-phone-copy-error]").waitFor()
+    assert.match(await page.locator("[data-courier-phone-copy-error]").innerText(), /No se pudo copiar/)
+    assert.deepEqual(errors, [])
+  } finally { await page.close() }
+
+  ;({ page, errors } = await open("nophone", DEVICES[0]))
+  try {
+    assert.equal((await page.locator("[data-courier-phone-missing]").innerText()).trim(), "Teléfono no disponible")
+    assert.equal(await page.locator("a[href^='tel:']").count(), 0, "sin enlace inválido")
+    assert.equal(await page.getByRole("button", { name: "Copiar número" }).count(), 0)
+    assert.equal(await page.getByRole("button", { name: /Entregado/ }).isEnabled(), true, "no bloquea la entrega")
+    assert.deepEqual(errors, [])
+    await shot(page, "cadete-sin-telefono")
+  } finally { await page.close() }
+
+  // Al registrar el resultado, la vista nueva sin teléfono lo retira de la pantalla.
+  ;({ page, errors } = await open("actions", DEVICES[2]))
+  try {
+    await page.getByRole("button", { name: /Entregado/ }).click()
+    await page.getByRole("button", { name: /Confirmar/ }).click()
+    await page.locator("[data-courier-message]").waitFor()
+    assert.equal(await page.locator("[data-courier-phone]").count(), 0)
+    assert.deepEqual(errors, [])
+  } finally { await page.close() }
 })

@@ -14,6 +14,7 @@ import {
   localDeliveryCourierUrl,
   normalizeLocalDeliveryReservationDays,
   parseCourierActionRequest,
+  toCourierPhone,
 } from "./local-delivery-outcome.ts"
 
 test("token: 128 bits aleatorios en base64url, distinto cada vez y validado con el mismo formato que la base", () => {
@@ -152,4 +153,23 @@ test("¡Llega hoy!: nunca antes del cadete, entregado, cancelado, con reintegro,
   assert.equal(isLocalDeliveryArrivingToday(arriving({}, { inTransitAt: null }), NOW), false)
   assert.equal(isLocalDeliveryArrivingToday(arriving({}, null), NOW), false)
   assert.equal(isLocalDeliveryArrivingToday(arriving({}, { inTransitAt: "fecha-rota" }), NOW), false)
+})
+
+test("teléfono para el cadete: números argentinos, característica y prefijos internacionales; nunca inventa dígitos", () => {
+  const cases: Array<[string | null, { display: string; tel: string } | null]> = [
+    ["+54 9 341 555-0000", { display: "+54 9 341 555-0000", tel: "+5493415550000" }],
+    ["0054 9 341 5550000", { display: "0054 9 341 5550000", tel: "+5493415550000" }],
+    ["5493415550000", { display: "5493415550000", tel: "+5493415550000" }],
+    ["0341 15 555-0000", { display: "0341 15 555-0000", tel: "0341155550000" }],
+    ["(0341) 4 555 000", { display: "(0341) 4 555 000", tel: "03414555000" }],
+    ["341.555.0000", { display: "341.555.0000", tel: "3415550000" }],
+    ["  11   4555 6677 ", { display: "11 4555 6677", tel: "1145556677" }],
+    ["+598 99 123 456", { display: "+598 99 123 456", tel: "+59899123456" }],
+  ]
+  for (const [raw, expected] of cases) assert.deepEqual(toCourierPhone(raw), expected, String(raw))
+  // Ausente o inutilizable: sin enlace (la página muestra "Teléfono no disponible").
+  for (const raw of [null, undefined, "", "   ", "sin teléfono", "341-555-0000 int. 23", "1234567", "1234567890123456", "+", "++5493415550000",
+    "341 555 0000+", "javascript:alert(1)", "tel:3415550000", "3415550000;ext=2", "0054", "0".repeat(41)]) {
+    assert.equal(toCourierPhone(raw), null, String(raw))
+  }
 })

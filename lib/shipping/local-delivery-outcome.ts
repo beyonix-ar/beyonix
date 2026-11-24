@@ -129,6 +129,36 @@ export function getCourierScreen(state: CourierOrderState): CourierScreen {
   return { kind: "actions", failedAttempts: state.failedAttempts }
 }
 
+/** Teléfono del destinatario para el cadete: cómo se muestra y el valor marcable del enlace tel:. */
+export interface CourierPhone {
+  display: string
+  tel: string
+}
+
+/**
+ * Teléfono de contacto del pedido (el confirmado en el checkout) listo para
+ * llamar, o `null` si no es utilizable. Nunca inventa dígitos: acepta sólo
+ * dígitos y separadores (espacio, guion, punto, paréntesis) y un "+" inicial,
+ * con 8 a 15 dígitos (misma regla que el checkout).
+ *   * "+54 9 341 555-0000" / "0054 9 341…" → tel:+549341… (internacional);
+ *   * "0341 15 555-0000" / "341 5550000" → tel con los dígitos tal cual: el
+ *     cadete llama desde Argentina, donde el 0 y el 15 se marcan así.
+ */
+export function toCourierPhone(raw: string | null | undefined): CourierPhone | null {
+  const display = (raw ?? "").trim().replace(/\s+/g, " ")
+  if (!display || display.length > 40 || !/^\+?[\d\s().-]+$/.test(display)) return null
+  const digits = display.replace(/\D/g, "")
+  if (digits.length < 8 || digits.length > 15) return null
+  if (display.startsWith("+")) return { display, tel: `+${digits}` }
+  if (digits.startsWith("00")) {
+    const international = digits.slice(2)
+    return international.length >= 8 ? { display, tel: `+${international}` } : null
+  }
+  // "54" + característica + número (12 o 13 dígitos): ya trae código de país.
+  if (digits.startsWith("54") && digits.length >= 12) return { display, tel: `+${digits}` }
+  return { display, tel: digits }
+}
+
 export interface CourierActionRequest {
   action: LocalDeliveryCourierAction
   /** Intentos fallidos que el cadete vio en pantalla (evita contar dos veces un doble toque). */

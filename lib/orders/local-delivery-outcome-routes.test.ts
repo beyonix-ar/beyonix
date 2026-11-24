@@ -44,7 +44,13 @@ interface CourierState {
   estado: string
   outcome: string
   failedAttempts: number
+  /** Teléfono de contacto del pedido (por defecto, uno válido). */
+  phone?: string | null
+  /** Token revocado: la base no lo encuentra (filtro token_revoked_at is null). */
+  revoked?: boolean
 }
+
+const PHONE = "+54 9 341 555-0000"
 
 /** Base simulada del cadete: shipment por token, pedido mínimo y bultos. */
 function courierDb(state: CourierState, rpc: Record<string, (call: Call) => Response> = {}): Responder {
@@ -53,7 +59,7 @@ function courierDb(state: CourierState, rpc: Record<string, (call: Call) => Resp
     if (call.path === "/rest/v1/local_delivery_shipments") {
       // Consulta de "entrega más nueva" (nuevo envío): no hay.
       if (call.filters.shipment_number) return Response.json([])
-      if (call.filters.access_token !== `eq.${TOKEN}`) return Response.json(null)
+      if (call.filters.access_token !== `eq.${TOKEN}` || call.filters.token_revoked_at !== "is.null" || state.revoked) return Response.json(null)
       return Response.json({ id: 7, order_id: 41, shipment_number: 1, outcome_status: state.outcome, failed_attempts: state.failedAttempts })
     }
     if (call.path === "/rest/v1/ordenes") {
@@ -62,6 +68,7 @@ function courierDb(state: CourierState, rpc: Record<string, (call: Call) => Resp
         cliente_nombre: "María José Peña", cliente_direccion: "Córdoba 1234. Referencias: Portón verde", localidad: "Rosario", cp_destino: "2000",
         cliente_email: "maria@example.com", payment_status: "approved", paid_at: "2026-11-03T12:00:00.000Z", payment_confirmed_amount: 45000,
         delivered_at: null, order_change_status: null, shipping_cost_real: 2500,
+        cliente_telefono: state.phone === undefined ? PHONE : state.phone,
       })
     }
     if (call.path === "/rest/v1/order_packages") return Response.json({ parcel_count: 2 })
@@ -106,7 +113,7 @@ test("cadete: 1.er ausente usa la RPC atómica con los intentos vistos y devuelv
     const rpc = calls.find((call) => call.path === "/rest/v1/rpc/record_local_delivery_courier_outcome")
     assert.deepEqual(rpc?.body, { p_token: TOKEN, p_outcome: "absent", p_expected_attempts: 0, p_reason: null, p_comment: null })
     assert.deepEqual(payload.view.screen, { kind: "actions", failedAttempts: 1 })
-    assert.deepEqual(Object.keys(payload.view).sort(), ["address", "customerName", "failedAttempts", "locality", "orderCode", "parcels", "reference", "screen"])
+    assert.deepEqual(Object.keys(payload.view).sort(), ["address", "customerName", "failedAttempts", "locality", "orderCode", "parcels", "phone", "reference", "screen"])
     const serialized = JSON.stringify(payload).toLowerCase()
     for (const forbidden of ["maria@example.com", "45000", "2500", "approved", "payment", "dni", "cuit", '"41"', "order_id"]) {
       assert.equal(serialized.includes(forbidden), false, forbidden)
@@ -361,4 +368,89 @@ test("Despachos GET: el cupo se aplica por subestado en la base; 200 devueltos n
     if (call.path === "/rest/v1/order_packages") return Response.json([{ id: 9, order_id: 5001, status: "prepared", attempt_number: 1, parcel_count: 1 }])
     return undefined
   })
+})
+
+// ── Teléfono del destinatario para el cadete ────────────────────────────────
+
+const loadView = async (state: CourierState, token = TOKEN) => {
+  const { loadCourierDelivery } = await import("./local-delivery-courier")
+  const { createAdminClient } = await import("../supabase/admin")
+  return (await loadCourierDelivery(createAdminClient(), token))?.view ?? null
+}
+
+test("cadete: con la entrega en curso ve el teléfono de contacto del pedido, normalizado para llamar", async () => {
+  for (const failedAttempts of [0, 1]) {
+    const state: CourierState = { estado: "en_camino", outcome: failedAttempts ? "first_attempt_failed" : "pending", failedAttempts }
+    await withSupabase(async (calls) => {
+      const view = await loadView(state)
+      assert.deepEqual(view?.phone, { display: PHONE, tel: "+5493415550000" })
+      const orderRead = calls.find((call) => call.path === "/rest/v1/ordenes")
+      assert.deepEqual(orderRead?.filters, { id: "eq.41" }, "sólo su pedido")
+    }, courierDb(state))
+  }
+})
+
+test("cadete: teléfono ausente o malformado => sin número ni enlace; las acciones de entrega siguen", async () => {
+  for (const phone of [null, "", "   ", "sin teléfono", "123", "341 555 0000 int. 2", "javascript:alert(1)"]) {
+    const state: CourierState = { estado: "en_camino", outcome: "pending", failedAttempts: 0, phone }
+    await withSupabase(async () => {
+      const view = await loadView(state)
+      assert.equal(view?.phone, null, String(phone))
+      assert.deepEqual(view?.screen, { kind: "actions", failedAttempts: 0 }, "no bloquea la entrega")
+    }, courierDb(state))
+  }
+})
+
+test("cadete: entregado, cancelado, en incidencia, regresando, devuelto o en preparación => el teléfono no se expone", async () => {
+  const states: CourierState[] = [
+    { estado: "entregado", outcome: "delivered", failedAttempts: 0 },
+    { estado: "en_camino", outcome: "incident", failedAttempts: 0 },
+    { estado: "en_camino", outcome: "returning", failedAttempts: 2 },
+    { estado: "en_camino", outcome: "returned", failedAttempts: 2 },
+    { estado: "pagado", outcome: "pending", failedAttempts: 0 },
+    { estado: "cancelado", outcome: "pending", failedAttempts: 0 },
+  ]
+  for (const state of states) {
+    await withSupabase(async () => {
+      const view = await loadView(state)
+      assert.ok(view, state.outcome)
+      assert.equal(view.phone, null, `${state.estado}/${state.outcome}`)
+      assert.equal(JSON.stringify(view).includes("555"), false)
+    }, courierDb(state))
+  }
+  // Tras registrar "Entregado", la respuesta ya no trae el teléfono.
+  const state: CourierState = { estado: "en_camino", outcome: "pending", failedAttempts: 0 }
+  const { POST } = await import("../../app/api/delivery/[token]/route")
+  await withSupabase(async () => {
+    const payload = await (await POST(courierPost({ action: "incident", expectedAttempts: 0, reason: "no_access", comment: null }), tokenParams())).json() as { view: { phone: unknown } }
+    assert.equal(payload.view.phone, null)
+  }, courierDb(state, {
+    record_local_delivery_courier_outcome: () => {
+      state.outcome = "incident"
+      return Response.json({ orderId: 41, result: "incident", changed: true, outcomeStatus: "incident", failedAttempts: 0, estado: "en_camino" })
+    },
+  }))
+})
+
+test("cadete: token inválido, desconocido o revocado => sin pedido ni teléfono; nada del teléfono en logs", async () => {
+  const logged: string[] = []
+  const spies = (["log", "info", "warn", "error"] as const).map((level) => mock.method(console, level, (...args: unknown[]) => { logged.push(args.map(String).join(" ")) }))
+  try {
+    const state: CourierState = { estado: "en_camino", outcome: "pending", failedAttempts: 0, revoked: true }
+    await withSupabase(async (calls) => {
+      assert.equal(await loadView(state), null, "revocado")
+      assert.equal(await loadView({ ...state, revoked: false }, "OtroTokenQueNoExiste12345"), null, "desconocido")
+      assert.equal(await loadView({ ...state, revoked: false }, "corto"), null, "formato inválido")
+      assert.equal(calls.some((call) => call.path === "/rest/v1/ordenes"), false, "sin token válido no se lee el pedido")
+    }, courierDb(state))
+    const { POST } = await import("../../app/api/delivery/[token]/route")
+    await withSupabase(async () => {
+      const response = await POST(courierPost({ action: "absent", expectedAttempts: 0 }), tokenParams())
+      assert.equal(response.status, 404)
+      assert.equal(JSON.stringify(await response.json()).includes("555"), false)
+    }, courierDb(state))
+  } finally {
+    for (const spy of spies) spy.mock.restore()
+  }
+  assert.equal(logged.some((line) => line.includes("555")), false)
 })

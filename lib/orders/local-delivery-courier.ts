@@ -11,6 +11,8 @@ import {
   getCourierScreen,
   isLocalDeliveryAccessToken,
   isLocalDeliveryOutcomeStatus,
+  toCourierPhone,
+  type CourierPhone,
   type CourierActionRequest,
   type CourierScreen,
 } from "@/lib/shipping/local-delivery-outcome"
@@ -30,9 +32,16 @@ export interface CourierDeliveryView {
   parcels: number | null
   screen: CourierScreen
   failedAttempts: number
+  /**
+   * Teléfono de contacto del pedido, SÓLO mientras el cadete puede informar
+   * la entrega (pantalla "actions"). Entregado, cancelado, en incidencia,
+   * regresando, devuelto o en preparación: `null` (no se expone). También
+   * `null` si el pedido no tiene un teléfono utilizable.
+   */
+  phone: CourierPhone | null
 }
 
-const ORDER_COLUMNS = "id,estado,cancelled_at,financial_status,shipping_provider,envio_proveedor,cliente_nombre,cliente_direccion,localidad,cp_destino"
+const ORDER_COLUMNS = "id,estado,cancelled_at,financial_status,shipping_provider,envio_proveedor,cliente_nombre,cliente_direccion,localidad,cp_destino,cliente_telefono"
 const CANCELLED_FINANCIAL = ["cancellation_requested", "refund_pending", "refunded", "cancelled"]
 
 interface CourierContext {
@@ -59,11 +68,12 @@ export async function loadCourierDelivery(admin: LocalDeliveryAdminClient, token
   const data = order.data as {
     id: number; estado: string | null; cancelled_at: string | null; financial_status: string | null
     shipping_provider: string | null; envio_proveedor: string | null; cliente_nombre: string | null
-    cliente_direccion: string | null; localidad: string | null; cp_destino: string | null
+    cliente_direccion: string | null; localidad: string | null; cp_destino: string | null; cliente_telefono: string | null
   } | null
   if (!data || !isLocalDeliveryOrder(data) || (newer.data ?? []).length > 0) return null
   const { address, reference } = splitDeliveryAddress(data.cliente_direccion)
   const cancelled = data.estado === "cancelado" || Boolean(data.cancelled_at) || CANCELLED_FINANCIAL.includes(data.financial_status ?? "")
+  const screen = getCourierScreen({ estado: data.estado, cancelled, outcomeStatus: row.outcome_status, failedAttempts: row.failed_attempts })
   return {
     orderId: data.id,
     view: {
@@ -73,8 +83,10 @@ export async function loadCourierDelivery(admin: LocalDeliveryAdminClient, token
       reference,
       locality: [data.localidad?.trim(), data.cp_destino ? `CP ${data.cp_destino.trim()}` : null].filter(Boolean).join(" · "),
       parcels: (pkg.data as { parcel_count: number | null } | null)?.parcel_count ?? null,
-      screen: getCourierScreen({ estado: data.estado, cancelled, outcomeStatus: row.outcome_status, failedAttempts: row.failed_attempts }),
+      screen,
       failedAttempts: row.failed_attempts,
+      // Dato personal: sólo mientras la entrega sigue en curso con el cadete.
+      phone: screen.kind === "actions" ? toCourierPhone(data.cliente_telefono) : null,
     },
   }
 }
