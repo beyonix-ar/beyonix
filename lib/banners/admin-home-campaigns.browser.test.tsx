@@ -80,7 +80,17 @@ test.before(async () => {
             window[list] = window[list].map((item) => item.id === body.id ? saved : item);
             return Response.json({ banner: saved });
           }
-          if (method === "DELETE") { const id = new URL(String(url), location.href).searchParams.get("id"); window.__HOME = window.__HOME.filter((item) => item.id !== id); return Response.json({ ok: true }); }
+          if (method === "DELETE") {
+            // Mismo DELETE condicionado que la API: id + versión vista; distinta => 409 sin borrar.
+            const params = new URL(String(url), location.href).searchParams;
+            const id = params.get("id");
+            const list = window.__HOME.some((item) => item.id === id) ? "__HOME" : "__PRODUCTS";
+            const current = window[list].find((item) => item.id === id);
+            if (!current) return Response.json({ error: "Banner no encontrado." }, { status: 404 });
+            if (params.get("expected_updated_at") !== current.updated_at) return Response.json({ error: "No se eliminó: este banner cambió desde que lo abriste (otro administrador lo modificó). Recargá los datos y revisalo antes de eliminarlo.", conflict: true }, { status: 409 });
+            window[list] = window[list].filter((item) => item.id !== id);
+            return Response.json({ ok: true });
+          }
           return Response.json({ error: "?" }, { status: 400 });
         };
         createRoot(document.getElementById("root")).render(<AdminBanners embedded />);`,
@@ -119,6 +129,9 @@ for (const theme of ["dark", "light"] as const) {
     const { page, errors } = await open(theme)
     try {
       assert.equal(await page.getByRole("tab", { name: "Home" }).getAttribute("aria-selected"), "true")
+      // Nombre accesible real de las pestañas (texto real, sin escapes literales).
+      assert.equal(await page.getByRole("tablist", { name: "Ubicación del banner", exact: true }).count(), 1)
+      assert.equal(await page.getByRole("tablist").getAttribute("aria-label"), "Ubicación del banner")
       const status = async (id: string) => row(page, id).getAttribute("data-home-campaign-status")
       assert.deepEqual(
         [await status("Navidad"), await status("Permanente"), await status("Año nuevo"), await status("Black Friday"), await status("Pausada")],
@@ -229,7 +242,9 @@ test("editar (fin inclusivo de vuelta en el formulario), desactivar sin perder d
 
     await row(page, "Black Friday").getByRole("button", { name: "Eliminar campaña" }).click()
     await page.getByText("Campaña eliminada.").waitFor()
-    assert.ok((await requests(page)).some((request) => request.method === "DELETE" && request.url.endsWith("?id=Black%20Friday")))
+    const deleted = (await requests(page)).find((request) => request.method === "DELETE")
+    const deleteParams = new URL(deleted?.url ?? "", "http://admin.test").searchParams
+    assert.deepEqual([deleteParams.get("id"), deleteParams.get("expected_updated_at")], ["Black Friday", "2026-11-01T00:00:00.000000+00:00"], "elimina sólo la versión vista")
     assert.equal(await row(page, "Black Friday").count(), 0)
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "sin desborde en celular")
     assert.deepEqual(errors, [])
@@ -289,6 +304,53 @@ test("dos administradores: guardar un formulario viejo no reactiva lo que otro d
     assert.match(await error.innerText(), /otro administrador/)
     const permanent = await page.evaluate(() => (window as unknown as { __HOME: Array<{ id: string; active: boolean }> }).__HOME.find((item) => item.id === "Permanente"))
     assert.equal(permanent?.active, true)
+    assert.deepEqual(errors, [])
+  } finally { await page.close() }
+})
+
+test("dos administradores: eliminar una campaña que otro editó => no se borra, se avisa y 'Recargar datos' permite decidir con lo actual", async () => {
+  const { page, errors } = await open()
+  try {
+    await otherAdminSaves(page, "Permanente", { campaign_name: "Permanente editada" })
+    await row(page, "Permanente").getByRole("button", { name: "Eliminar campaña" }).click()
+    const error = page.locator("[data-home-campaigns-error]")
+    await error.waitFor()
+    assert.match(await error.innerText(), /No se eliminó.*otro administrador/)
+    const stored = await page.evaluate(() => (window as unknown as { __HOME: Array<{ id: string; campaign_name: string }> }).__HOME.find((item) => item.id === "Permanente"))
+    assert.equal(stored?.campaign_name, "Permanente editada", "la edición del otro administrador sigue")
+
+    await page.getByRole("button", { name: "Recargar datos" }).click()
+    await page.getByText("Permanente editada").first().waitFor()
+    assert.equal(await page.locator("[data-home-campaigns-error]").count(), 0)
+    // Con la versión actual, la confirmación vuelve a pedirse y elimina.
+    let confirmations = 0
+    await page.exposeFunction("__countConfirm", () => { confirmations += 1 })
+    await page.evaluate(() => { window.confirm = () => { void (window as unknown as { __countConfirm: () => void }).__countConfirm(); return true } })
+    await row(page, "Permanente").getByRole("button", { name: "Eliminar campaña" }).click()
+    await page.getByText("Campaña eliminada.").waitFor()
+    assert.equal(await row(page, "Permanente").count(), 0)
+    assert.equal(confirmations, 1, "conserva la confirmación previa")
+    assert.deepEqual(errors, [])
+  } finally { await page.close() }
+})
+
+test("Productos: eliminar un banner que otro administrador cambió => 409, no se borra y la lista se recarga", async () => {
+  const { page, errors } = await open()
+  try {
+    await page.getByRole("tab", { name: "Productos" }).click()
+    await page.getByText("Banners cargados").waitFor()
+    await page.evaluate(() => {
+      const scope = window as unknown as { __PRODUCTS: Array<Record<string, unknown>> }
+      scope.__PRODUCTS = scope.__PRODUCTS.map((item) => ({ ...item, alt_text: "Banner A editado", updated_at: "2026-12-24T16:00:00.000000+00:00" }))
+    })
+    await page.getByRole("button", { name: "Eliminar banner" }).click()
+    await page.getByText(/No se eliminó.*otro administrador/).waitFor()
+    assert.equal(await page.evaluate(() => (window as unknown as { __PRODUCTS: unknown[] }).__PRODUCTS.length), 1, "el banner sigue")
+    await page.getByText("Banner A editado").first().waitFor()
+    // Ya con la lista recargada (versión actual), se elimina.
+    await page.getByRole("button", { name: "Eliminar banner" }).click()
+    await page.getByText("Banner eliminado.").waitFor()
+    assert.equal(await page.evaluate(() => (window as unknown as { __PRODUCTS: unknown[] }).__PRODUCTS.length), 0)
     assert.deepEqual(errors, [])
   } finally { await page.close() }
 })

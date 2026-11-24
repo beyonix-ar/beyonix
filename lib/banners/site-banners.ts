@@ -80,6 +80,32 @@ export function parseBannerSortOrder(input: unknown): SortOrderResult {
 export const isBannerPlacement = (value: unknown): value is BannerPlacement =>
   typeof value === "string" && (BANNER_PLACEMENTS as readonly string[]).includes(value)
 
+// ── Versión (control optimista) ─────────────────────────────────────────────
+
+const BANNER_VERSION_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?(?:Z|[+-](\d{2}):(\d{2}))$/
+
+/**
+ * Versión (`updated_at`) que manda el Admin en PATCH/DELETE: sólo un instante
+ * ISO 8601 completo, con fecha real, hora, segundos, fracción opcional (hasta
+ * microsegundos) y zona obligatoria ("Z" o un offset "±HH:MM"), tal como lo
+ * devuelve Supabase. Cualquier otro valor ("0", texto, fechas imposibles)
+ * es `null`: PostgreSQL no podría compararlo y nunca debe llegar a la base.
+ * Devuelve el valor sin reformatear para no perder precisión ni la zona.
+ */
+export function parseBannerVersion(input: unknown): string | null {
+  if (typeof input !== "string") return null
+  const value = input.trim()
+  const match = BANNER_VERSION_PATTERN.exec(value)
+  if (!match) return null
+  const [year, month, day, hour, minute, second, offsetHours = 0, offsetMinutes = 0] = match.slice(1).map((part) => Number(part ?? 0))
+  if (year < 1 || month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59) return null
+  if (offsetHours > 15 || offsetMinutes > 59) return null
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
+  const daysInMonth = month === 2 ? (leap ? 29 : 28) : [4, 6, 9, 11].includes(month) ? 30 : 31
+  return day >= 1 && day <= daysInMonth ? value : null
+}
+
 // ── Estado y prioridad ───────────────────────────────────────────────────────
 
 export type BannerStatus = "disabled" | "scheduled" | "active" | "ended"

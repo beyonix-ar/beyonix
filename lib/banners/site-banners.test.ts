@@ -12,6 +12,7 @@ import {
   detectBannerImageMime,
   isBannerMimeAllowed,
   parseBannerSortOrder,
+  parseBannerVersion,
   getBannerStatus,
   pickVisibleBanner,
   validateBannerDestination,
@@ -165,4 +166,28 @@ test("respuesta pública del Home validada en el navegador", () => {
   assert.equal(parseHomeCampaignState({ banner: { ...banner, placement: "products" }, nextChangeAt: null, serverNow: "2026-12-24T12:00:00Z" })?.banner, null)
   assert.equal(parseHomeCampaignState({ banner: null, serverNow: "nope" }), null)
   assert.equal(parseHomeCampaignState("<html>"), null)
+})
+
+test("versión del banner (expected_updated_at): sólo ISO 8601 completo con zona; se devuelve sin reformatear", () => {
+  for (const valid of [
+    "2026-11-23T12:00:00Z",
+    "2026-11-23T12:00:00.000Z",
+    "2026-11-23T12:00:00.123456+00:00",
+    "2026-11-23T09:00:00.5-03:00",
+    "2026-11-23T17:30:00+05:30",
+    "2028-02-29T00:00:00+00:00",
+  ]) {
+    assert.equal(parseBannerVersion(valid), valid, valid)
+  }
+  assert.equal(parseBannerVersion(" 2026-11-23T12:00:00Z "), "2026-11-23T12:00:00Z", "sólo recorta espacios")
+  for (const invalid of [
+    undefined, null, 0, 1700000000000, "", "   ", "0", "1", "ayer", "null", "now", "abc 2026",
+    "2026", "2026-11-23", "2026-11-23T12:00", "2026-11-23T12:00:00", "2026-11-23 12:00:00+00:00", "Mon, 23 Nov 2026 12:00:00 GMT",
+    "2026-02-30T00:00:00Z", "2027-02-29T00:00:00Z", "2026-04-31T00:00:00Z", "2026-13-01T00:00:00Z", "2026-00-10T00:00:00Z", "2026-11-00T00:00:00Z",
+    "2026-11-23T24:00:00Z", "2026-11-23T12:60:00Z", "2026-11-23T12:00:60Z", "2026-11-23T12:00:00.1234567Z",
+    "2026-11-23T12:00:00+16:00", "2026-11-23T12:00:00+05:60", "2026-11-23T12:00:00+0000", "0000-01-01T00:00:00Z",
+    "2026-11-23T12:00:00Z'; drop table x; --",
+  ]) {
+    assert.equal(parseBannerVersion(invalid), null, String(invalid))
+  }
 })

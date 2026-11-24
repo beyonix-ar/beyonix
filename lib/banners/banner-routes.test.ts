@@ -126,7 +126,7 @@ test("permisos reales: operador, cliente o sin sesión no administran banners", 
     await withSupabase(role, async (calls) => {
       assert.equal((await route.POST(adminRequest("POST", NEW_HOME))).status, 403, role)
       assert.equal((await route.PATCH(adminRequest("PATCH", { id: ID, active: false, expected_updated_at: VERSION }))).status, 403)
-      assert.equal((await route.DELETE(adminRequest("DELETE", undefined, `?id=${ID}`))).status, 403)
+      assert.equal((await route.DELETE(adminRequest("DELETE", undefined, `?${new URLSearchParams({ id: ID, expected_updated_at: VERSION })}`))).status, 403)
       assert.equal((await route.GET(adminRequest("GET", undefined, "?placement=home"))).status, 403)
       assert.deepEqual(writes(calls), [])
     }, undefined, FILES)
@@ -174,12 +174,20 @@ test("Productos sigue como antes: URL externa https admitida (sin descargarla), 
 // ── Concurrencia entre administradores (control optimista) ─────────────────
 
 /** Base con UNA fila y su versión real: cada UPDATE exitoso la avanza. */
-function versionedDb() {
-  let current = row({ active: false, updated_at: "2026-11-23T12:00:00.000000+00:00" })
+function versionedDb(initial: Record<string, unknown> = {}) {
+  let current: ReturnType<typeof row> | null = row({ active: false, updated_at: "2026-11-23T12:00:00.000000+00:00", ...initial })
   let saves = 0
   const responder: Responder = (call) => {
     if (call.path !== "/rest/v1/site_banner_items") return undefined
+    if (!current) return Response.json(call.method === "GET" ? null : [])
     if (call.method === "GET") return Response.json(current)
+    // DELETE condicionado: sólo borra la fila si id y versión coinciden.
+    if (call.method === "DELETE") {
+      if (call.filters.id !== `eq.${current.id}` || call.filters.updated_at !== `eq.${current.updated_at}`) return Response.json([])
+      const deleted = current
+      current = null
+      return Response.json([deleted])
+    }
     if (call.method === "PATCH") {
       if (call.filters.updated_at !== `eq.${current.updated_at}`) return Response.json([])
       saves += 1
@@ -188,7 +196,14 @@ function versionedDb() {
     }
     return undefined
   }
-  return { responder, current: () => current }
+  return {
+    responder,
+    exists: () => current !== null,
+    current: () => {
+      if (!current) throw new Error("El banner ya fue eliminado")
+      return current
+    },
+  }
 }
 
 test("dos administradores: el que guarda con datos viejos recibe 409 y no reactiva la campaña desactivada", async () => {
@@ -231,6 +246,106 @@ test("carrera entre la lectura y la escritura: el UPDATE condicionado no afecta 
     })
   }
 })
+
+const deleteQuery = (expected?: string, id = ID) => `?${new URLSearchParams({ id, ...(expected === undefined ? {} : { expected_updated_at: expected }) })}`
+const audits = (calls: Call[]) => calls.filter((call) => call.path === "/rest/v1/audit_logs")
+
+for (const placement of ["home", "products"] as const) {
+  test(`${placement}: dos administradores — A edita, B elimina con la versión vieja => 409, no borra ni audita; tras recargar, elimina`, async () => {
+    const { PATCH, DELETE } = await import("../../app/api/admin/banners/route")
+    const db = versionedDb(placement === "products" ? { placement: "products", campaign_name: null, mobile_image_url: null, starts_at: null, ends_at: null, destination_url: null } : {})
+    const opened = db.current().updated_at // ambos abrieron la misma versión
+    await withSupabase("super_admin", async (calls) => {
+      const edited = await PATCH(adminRequest("PATCH", { id: ID, alt_text: "Editado por A", expected_updated_at: opened }))
+      assert.equal(edited.status, 200)
+      const stale = await DELETE(adminRequest("DELETE", undefined, deleteQuery(opened)))
+      assert.equal(stale.status, 409)
+      const payload = await stale.json() as { error: string; conflict: boolean }
+      assert.equal(payload.conflict, true)
+      assert.match(payload.error, /No se eliminó.*otro administrador.*Recargá los datos/)
+      assert.equal(db.exists(), true, "el banner editado por A sigue")
+      assert.equal(db.current().alt_text, "Editado por A")
+      const deleteCall = calls.find((call) => call.method === "DELETE")
+      assert.deepEqual(deleteCall?.filters, { id: `eq.${ID}`, updated_at: `eq.${opened}` }, "un solo DELETE condicionado por id y versión")
+      assert.deepEqual(audits(calls).map((call) => (call.body as { action: string }).action), ["UPDATE"], "sin auditoría de la eliminación rechazada")
+
+      // B recarga (versión nueva) y confirma: ahora sí elimina y audita lo que se borró.
+      const retry = await DELETE(adminRequest("DELETE", undefined, deleteQuery(db.current().updated_at)))
+      assert.equal(retry.status, 200)
+      assert.equal(db.exists(), false)
+      const deletedAudit = audits(calls).at(-1)?.body as { action: string; before_data: { alt_text: string }; after_data: unknown }
+      assert.deepEqual([deletedAudit.action, deletedAudit.before_data.alt_text, deletedAudit.after_data], ["DELETE", "Editado por A", null])
+    }, db.responder)
+  })
+}
+
+test("dos administradores: A elimina, B guarda o elimina con la versión vieja => 404 sin escribir ni auditar", async () => {
+  const { PATCH, DELETE } = await import("../../app/api/admin/banners/route")
+  const db = versionedDb()
+  const opened = db.current().updated_at
+  await withSupabase("admin", async (calls) => {
+    assert.equal((await DELETE(adminRequest("DELETE", undefined, deleteQuery(opened)))).status, 200)
+    assert.equal((await PATCH(adminRequest("PATCH", { id: ID, active: true, expected_updated_at: opened }))).status, 404)
+    assert.equal((await DELETE(adminRequest("DELETE", undefined, deleteQuery(opened)))).status, 404)
+    assert.equal(audits(calls).length, 1, "sólo la eliminación de A")
+  }, db.responder)
+})
+
+test("DELETE: carrera entre otra edición y el borrado => 409 (el DELETE condicionado no afecta filas); sin versión => 400", async () => {
+  const { DELETE } = await import("../../app/api/admin/banners/route")
+  // Otro guardado entra justo antes del DELETE: la base no borra nada, la fila sigue.
+  await withSupabase("admin", async (calls) => {
+    const response = await DELETE(adminRequest("DELETE", undefined, deleteQuery(VERSION)))
+    assert.equal(response.status, 409)
+    assert.equal(calls.filter((call) => call.method === "DELETE").length, 1)
+    assert.deepEqual(audits(calls), [], "sin auditoría de algo que no pasó")
+  })
+  for (const expected of [undefined, "", "ayer"]) {
+    await withSupabase("admin", async (calls) => {
+      const response = await DELETE(adminRequest("DELETE", undefined, deleteQuery(expected)))
+      assert.equal(response.status, 400, String(expected))
+      assert.deepEqual(writes(calls), [])
+    })
+  }
+})
+
+const MALFORMED_VERSIONS = [undefined, "", "   ", "0", "ayer", "texto cualquiera", "2026-02-30T12:00:00Z", "2026-11-23", "2026-11-23T12:00:00"]
+
+test("versión malformada ('0', texto, fecha imposible, vacía o ausente) => 400 en PATCH y DELETE, sin consultar la base", async () => {
+  const { PATCH, DELETE } = await import("../../app/api/admin/banners/route")
+  for (const expected of MALFORMED_VERSIONS) {
+    await withSupabase("admin", async (calls) => {
+      const patch = await PATCH(adminRequest("PATCH", { id: ID, active: true, ...(expected === undefined ? {} : { expected_updated_at: expected }) }))
+      assert.equal(patch.status, 400, `PATCH ${String(expected)}`)
+      assert.match((await patch.json() as { error: string }).error, /versión.*no es válida/)
+      const remove = await DELETE(adminRequest("DELETE", undefined, deleteQuery(expected)))
+      assert.equal(remove.status, 400, `DELETE ${String(expected)}`)
+      assert.match((await remove.json() as { error: string }).error, /versión.*no es válida/)
+      assert.deepEqual(calls.filter((call) => call.path === "/rest/v1/site_banner_items" || call.path === "/rest/v1/audit_logs"), [], `${String(expected)}: nada llega a Supabase`)
+    })
+  }
+})
+
+for (const version of ["2026-11-23T12:00:00Z", "2026-11-23T12:00:00.123456+00:00", "2026-11-23T09:00:00.123456-03:00"]) {
+  test(`versión válida ${version}: llega intacta a la base; PATCH y DELETE conservan 200, 409 y 404`, async () => {
+    const { PATCH, DELETE } = await import("../../app/api/admin/banners/route")
+    const db = versionedDb({ updated_at: version })
+    await withSupabase("admin", async (calls) => {
+      // Con la versión vigente (formato exacto de Supabase), guarda.
+      assert.equal((await PATCH(adminRequest("PATCH", { id: ID, alt_text: "Editado", expected_updated_at: version }))).status, 200)
+      assert.equal(calls.find((call) => call.method === "PATCH")?.filters.updated_at, `eq.${version}`, "sin perder fracción ni zona")
+      // La versión vieja ya no sirve: 409 en ambos.
+      assert.equal((await PATCH(adminRequest("PATCH", { id: ID, active: true, expected_updated_at: version }))).status, 409)
+      assert.equal((await DELETE(adminRequest("DELETE", undefined, deleteQuery(version)))).status, 409)
+      assert.equal(db.exists(), true)
+      // Con la versión actual, elimina; después, 404 en ambos.
+      const current = db.current().updated_at
+      assert.equal((await DELETE(adminRequest("DELETE", undefined, deleteQuery(current)))).status, 200)
+      assert.equal((await PATCH(adminRequest("PATCH", { id: ID, active: true, expected_updated_at: current }))).status, 404)
+      assert.equal((await DELETE(adminRequest("DELETE", undefined, deleteQuery(current)))).status, 404)
+    }, db.responder)
+  })
+}
 
 test("prioridad inválida (vacía, texto, decimal, fuera de rango o ausente al crear) => 400 sin escribir", async () => {
   const { POST, PATCH } = await import("../../app/api/admin/banners/route")

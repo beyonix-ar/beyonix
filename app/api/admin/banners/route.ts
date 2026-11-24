@@ -12,6 +12,7 @@ import {
   isBannerMimeAllowed,
   isBannerPlacement,
   parseBannerSortOrder,
+  parseBannerVersion,
   validateBannerDestination,
   validateBannerImageUrl,
   type BannerPlacement,
@@ -49,6 +50,8 @@ type BannerBody = Partial<Record<
 
 const CONFLICT_MESSAGE =
   "Este banner cambió desde que lo abriste (otro administrador lo modificó). Recargá los datos y revisalos antes de volver a guardar."
+const DELETE_CONFLICT_MESSAGE =
+  "No se eliminó: este banner cambió desde que lo abriste (otro administrador lo modificó). Recargá los datos y revisalo antes de eliminarlo."
 
 function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : ""
@@ -288,9 +291,9 @@ export async function PATCH(request: Request) {
 
   // Control optimista: el formulario (o la lista) manda la versión que vio.
   // Si otro administrador guardó después, no se pisa nada (409).
-  const expected = normalizeText(body.expected_updated_at)
-  if (!expected || !Number.isFinite(Date.parse(expected))) {
-    return Response.json({ error: "Recargá los banners antes de guardar: falta la versión que estás editando." }, { status: 400 })
+  const expected = parseBannerVersion(body.expected_updated_at)
+  if (!expected) {
+    return Response.json({ error: "Recargá los banners antes de guardar: falta la versión que estás editando o no es válida." }, { status: 400 })
   }
 
   const before = await loadBanner(auth, id)
@@ -341,18 +344,29 @@ export async function DELETE(request: Request) {
     return Response.json({ error: "Falta el banner a eliminar." }, { status: 400 })
   }
 
-  const before = await loadBanner(auth, id)
-  if (!before) {
-    return Response.json({ error: "Banner no encontrado." }, { status: 404 })
+  // Control optimista: sólo se elimina la versión que el administrador vio.
+  const expected = parseBannerVersion(searchParams.get("expected_updated_at"))
+  if (!expected) {
+    return Response.json({ error: "Recargá los banners antes de eliminar: falta la versión que estás viendo o no es válida." }, { status: 400 })
   }
 
-  const { error } = await auth.admin
+  // Un único DELETE condicionado por id y versión: si otro administrador
+  // guardó antes, no se elimina ninguna fila (sin ventana entre leer y borrar).
+  const { data: rows, error } = await auth.admin
     .from("site_banner_items")
     .delete()
     .eq("id", id)
+    .eq("updated_at", expected)
+    .select(BANNER_COLUMNS)
 
   if (error) {
     return databaseErrorResponse(error, SAVE_ERROR)
+  }
+  const before = (rows ?? [])[0] as BannerRow | undefined
+  if (!before) {
+    return (await loadBanner(auth, id))
+      ? Response.json({ error: DELETE_CONFLICT_MESSAGE, conflict: true }, { status: 409 })
+      : Response.json({ error: "Banner no encontrado." }, { status: 404 })
   }
 
   await audit(auth, "DELETE", id, before, null)

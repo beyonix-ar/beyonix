@@ -48,13 +48,13 @@ const DEFAULT_ALT_TEXT = "Banner de productos BEYONIX"
 
 type BannerView = "home" | "products"
 
-/** Banners del sitio: campa\u00f1as programadas del Home y carrusel de Productos (sin cambios). */
+/** Banners del sitio: campañas programadas del Home y carrusel de Productos (sin cambios). */
 export function AdminBanners({ embedded = false }: { embedded?: boolean } = {}) {
   const [view, setView] = useState<BannerView>("home")
   return (
     <div className={embedded ? "space-y-3" : adminPageClassName}>
       {!embedded ? <AdminPageHeader eyebrow="Visuales" title="Banners" /> : null}
-      <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Ubicaci\u00f3n del banner">
+      <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Ubicación del banner">
         {([["home", "Home"], ["products", "Productos"]] as const).map(([value, label]) => (
           <AdminButton
             key={value}
@@ -153,9 +153,10 @@ function ProductsBanners({ embedded = false }: { embedded?: boolean } = {}) {
   }
 
   /** Otro administrador cambió el banner: no se pisa; se recarga la lista para revisarlo. */
+  // Recarga primero (loadBanners limpia el error) y después avisa del conflicto.
   const handleConflict = async (errorMessage: string | undefined) => {
-    setError(`${errorMessage ?? "Este banner cambió desde que lo abriste."} Volvé a abrirlo desde la lista para editarlo.`)
     await loadBanners()
+    setError(`${errorMessage ?? "Este banner cambió desde que lo abriste."} Volvé a abrirlo desde la lista para editarlo.`)
   }
 
   const persistBanner = async (nextImageUrl: string) => {
@@ -283,13 +284,22 @@ function ProductsBanners({ embedded = false }: { embedded?: boolean } = {}) {
       return
     }
 
-    const response = await fetch(`/api/admin/banners?id=${banner.id}`, {
+    // Versión vista en la lista: si otro administrador lo cambió, la API no lo elimina (409).
+    const query = new URLSearchParams({ id: banner.id, expected_updated_at: banner.updated_at ?? "" })
+    const response = await fetch(`/api/admin/banners?${query}`, {
       method: "DELETE",
       headers: {
         Authorization: `Bearer ${session.access_token}`,
       },
     })
-    const data = (await response.json()) as { error?: string }
+    const data = (await response.json().catch(() => ({}))) as { error?: string }
+
+    if (response.status === 409) {
+      // Recarga la lista con lo actual (el banner se conserva) y después avisa.
+      await loadBanners()
+      setError(data.error ?? "Este banner cambió desde que lo abriste. No se eliminó.")
+      return
+    }
 
     if (!response.ok) {
       setError(data.error ?? "No se pudo eliminar el banner.")

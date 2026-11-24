@@ -365,12 +365,15 @@ export function AdminHomeCampaigns() {
     setMessage("")
     setError("")
     try {
-      await authorizedFetch(`/api/admin/banners?id=${encodeURIComponent(campaign.id)}`, { method: "DELETE" })
+      // Versión vista en la lista: si otro administrador la cambió, la API no la elimina (409).
+      const query = new URLSearchParams({ id: campaign.id, expected_updated_at: campaign.updated_at ?? "" })
+      await authorizedFetch(`/api/admin/banners?${query}`, { method: "DELETE" })
       if (editingId === campaign.id) resetForm()
+      setConflict(false)
       setMessage("Campaña eliminada.")
       await load()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "No se pudo eliminar la campaña.")
+      showError(cause, "No se pudo eliminar la campaña.")
     }
   }
 

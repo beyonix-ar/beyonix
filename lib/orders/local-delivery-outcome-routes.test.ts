@@ -432,6 +432,100 @@ test("cadete: entregado, cancelado, en incidencia, regresando, devuelto o en pre
   }))
 })
 
+const PERSONAL = ["maría", "peña", "córdoba", "portón", "rosario", "2000", "555"]
+const exposesPersonalData = (value: unknown) => {
+  const serialized = JSON.stringify(value).toLowerCase()
+  return PERSONAL.filter((fragment) => serialized.includes(fragment))
+}
+
+test("cadete: con el reparto activo ve nombre, dirección, referencia, localidad y teléfono", async () => {
+  for (const failedAttempts of [0, 1]) {
+    const state: CourierState = { estado: "en_camino", outcome: failedAttempts ? "first_attempt_failed" : "pending", failedAttempts }
+    await withSupabase(async () => {
+      const view = await loadView(state)
+      assert.deepEqual(
+        [view?.customerName, view?.address, view?.reference, view?.locality, view?.phone?.display],
+        ["María José Peña", "Córdoba 1234", "Portón verde", "Rosario · CP 2000", PHONE],
+      )
+    }, courierDb(state))
+  }
+})
+
+test("cadete: entregado, cancelado, en incidencia, regresando, devuelto o en preparación => sin nombre, dirección, referencia ni teléfono", async () => {
+  const states: CourierState[] = [
+    { estado: "entregado", outcome: "delivered", failedAttempts: 0 },
+    { estado: "en_camino", outcome: "delivered", failedAttempts: 0 },
+    { estado: "en_camino", outcome: "incident", failedAttempts: 0 },
+    { estado: "en_camino", outcome: "returning", failedAttempts: 2 },
+    { estado: "en_camino", outcome: "returned", failedAttempts: 2 },
+    { estado: "pagado", outcome: "pending", failedAttempts: 0 },
+    { estado: "cancelado", outcome: "pending", failedAttempts: 0 },
+  ]
+  for (const state of states) {
+    await withSupabase(async () => {
+      const view = await loadView(state)
+      const label = `${state.estado}/${state.outcome}`
+      assert.ok(view, label)
+      assert.deepEqual([view.customerName, view.address, view.reference, view.locality, view.phone], [null, null, null, null, null], label)
+      assert.deepEqual(exposesPersonalData(view), [], label)
+      // Lo mínimo para mostrar el resultado sigue disponible.
+      assert.equal(view.orderCode.length > 0, true, label)
+      assert.notEqual(view.screen.kind, "actions", label)
+      assert.equal(view.parcels, 2, label)
+    }, courierDb(state))
+  }
+})
+
+test("cadete: al finalizar (incidencia, 2.º ausente o Entregado repetido) la respuesta ya no trae datos personales ni los loguea", async () => {
+  const logged: string[] = []
+  const spies = (["log", "info", "warn", "error"] as const).map((level) => mock.method(console, level, (...args: unknown[]) => { logged.push(args.map(String).join(" ")) }))
+  const { POST } = await import("../../app/api/delivery/[token]/route")
+  try {
+    const incident: CourierState = { estado: "en_camino", outcome: "pending", failedAttempts: 0 }
+    await withSupabase(async () => {
+      const response = await POST(courierPost({ action: "incident", expectedAttempts: 0, reason: "no_access", comment: null }), tokenParams())
+      assert.equal(response.status, 200)
+      const payload = await response.json() as { ok: boolean; view: { screen: { kind: string } } }
+      assert.deepEqual([payload.ok, payload.view.screen.kind], [true, "incident"])
+      assert.deepEqual(exposesPersonalData(payload), [])
+    }, courierDb(incident, {
+      record_local_delivery_courier_outcome: () => {
+        incident.outcome = "incident"
+        return Response.json({ orderId: 41, result: "incident", changed: true, outcomeStatus: "incident", failedAttempts: 0, estado: "en_camino" })
+      },
+    }))
+
+    const secondAbsent: CourierState = { estado: "en_camino", outcome: "first_attempt_failed", failedAttempts: 1 }
+    await withSupabase(async () => {
+      const response = await POST(courierPost({ action: "absent", expectedAttempts: 1 }), tokenParams())
+      assert.equal(response.status, 200)
+      const payload = await response.json() as { view: { screen: { kind: string } } }
+      assert.equal(payload.view.screen.kind, "returning")
+      assert.deepEqual(exposesPersonalData(payload), [])
+    }, courierDb(secondAbsent, {
+      record_local_delivery_courier_outcome: () => {
+        secondAbsent.outcome = "returning"
+        secondAbsent.failedAttempts = 2
+        return Response.json({ orderId: 41, result: "returning", changed: true, outcomeStatus: "returning", failedAttempts: 2, estado: "en_camino" })
+      },
+    }))
+
+    // Entregado repetido (doble toque / QR escaneado después): idempotente y sin datos personales.
+    const delivered: CourierState = { estado: "entregado", outcome: "delivered", failedAttempts: 0 }
+    await withSupabase(async (calls) => {
+      const response = await POST(courierPost({ action: "delivered", expectedAttempts: 0 }), tokenParams())
+      assert.equal(response.status, 200)
+      const payload = await response.json() as { ok: boolean; result: string; view: { screen: { kind: string } } }
+      assert.deepEqual([payload.ok, payload.result, payload.view.screen.kind], [true, "already_delivered", "delivered"])
+      assert.deepEqual(exposesPersonalData(payload), [])
+      assert.equal(calls.some((call) => call.path.startsWith("/rest/v1/rpc/")), false, "no escribe un segundo resultado")
+    }, courierDb(delivered))
+  } finally {
+    for (const spy of spies) spy.mock.restore()
+  }
+  assert.deepEqual(logged.filter((line) => exposesPersonalData(line).length > 0), [])
+})
+
 test("cadete: token inválido, desconocido o revocado => sin pedido ni teléfono; nada del teléfono en logs", async () => {
   const logged: string[] = []
   const spies = (["log", "info", "warn", "error"] as const).map((level) => mock.method(console, level, (...args: unknown[]) => { logged.push(args.map(String).join(" ")) }))

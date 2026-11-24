@@ -25,10 +25,16 @@ import {
  */
 export interface CourierDeliveryView {
   orderCode: string
-  customerName: string
-  address: string
+  /**
+   * Datos personales del destinatario (nombre, dirección, referencia y
+   * localidad): SÓLO con el reparto activo (pantalla "actions"), igual que el
+   * teléfono. En cualquier otro estado son `null`: un QR todavía vigente no
+   * vuelve a mostrar a quién ni dónde se entregó.
+   */
+  customerName: string | null
+  address: string | null
   reference: string | null
-  locality: string
+  locality: string | null
   parcels: number | null
   screen: CourierScreen
   failedAttempts: number
@@ -74,19 +80,20 @@ export async function loadCourierDelivery(admin: LocalDeliveryAdminClient, token
   const { address, reference } = splitDeliveryAddress(data.cliente_direccion)
   const cancelled = data.estado === "cancelado" || Boolean(data.cancelled_at) || CANCELLED_FINANCIAL.includes(data.financial_status ?? "")
   const screen = getCourierScreen({ estado: data.estado, cancelled, outcomeStatus: row.outcome_status, failedAttempts: row.failed_attempts })
+  // Datos personales: sólo mientras la entrega sigue en curso con el cadete.
+  const active = screen.kind === "actions"
   return {
     orderId: data.id,
     view: {
       orderCode: orderCode(data.id),
-      customerName: data.cliente_nombre?.trim() || "—",
-      address: address || "—",
-      reference,
-      locality: [data.localidad?.trim(), data.cp_destino ? `CP ${data.cp_destino.trim()}` : null].filter(Boolean).join(" · "),
+      customerName: active ? data.cliente_nombre?.trim() || "—" : null,
+      address: active ? address || "—" : null,
+      reference: active ? reference : null,
+      locality: active ? [data.localidad?.trim(), data.cp_destino ? `CP ${data.cp_destino.trim()}` : null].filter(Boolean).join(" · ") : null,
       parcels: (pkg.data as { parcel_count: number | null } | null)?.parcel_count ?? null,
       screen,
       failedAttempts: row.failed_attempts,
-      // Dato personal: sólo mientras la entrega sigue en curso con el cadete.
-      phone: screen.kind === "actions" ? toCourierPhone(data.cliente_telefono) : null,
+      phone: active ? toCourierPhone(data.cliente_telefono) : null,
     },
   }
 }

@@ -149,15 +149,20 @@ export function CourierDeliveryClient({ token, initialView }: { token: string; i
             <dt className="text-xs font-bold uppercase tracking-widest text-neutral-500">Pedido</dt>
             <dd className="text-2xl font-black tabular-nums" data-courier-order="">{view.orderCode}</dd>
           </div>
-          <div>
-            <dt className="text-xs font-bold uppercase tracking-widest text-neutral-500">Cliente</dt>
-            <dd className="text-lg font-bold">{view.customerName}</dd>
-          </div>
-          <div>
-            <dt className="text-xs font-bold uppercase tracking-widest text-neutral-500">Dirección</dt>
-            <dd className="text-lg font-bold leading-snug">{view.address}</dd>
-            {view.locality && <dd className="text-sm text-neutral-700">{view.locality}</dd>}
-          </div>
+          {/* Datos del destinatario: el servidor sólo los envía con el reparto activo. */}
+          {view.customerName !== null && (
+            <div data-courier-customer="">
+              <dt className="text-xs font-bold uppercase tracking-widest text-neutral-500">Cliente</dt>
+              <dd className="text-lg font-bold">{view.customerName}</dd>
+            </div>
+          )}
+          {view.address !== null && (
+            <div data-courier-address="">
+              <dt className="text-xs font-bold uppercase tracking-widest text-neutral-500">Dirección</dt>
+              <dd className="text-lg font-bold leading-snug">{view.address}</dd>
+              {view.locality && <dd className="text-sm text-neutral-700">{view.locality}</dd>}
+            </div>
+          )}
           {view.reference && (
             <div>
               <dt className="text-xs font-bold uppercase tracking-widest text-neutral-500">Referencia</dt>

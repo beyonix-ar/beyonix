@@ -19,18 +19,19 @@ import { CourierDeliveryClient, CourierPageFrame } from "@/app/delivery/[token]/
 const params = new URLSearchParams(location.search)
 const base = { orderCode: "BX-2041", customerName: "María José Peña", address: "Córdoba 1234 Piso 3 Dto B",
   reference: "Portón verde, timbre 2", locality: "Rosario · CP 2000", parcels: 2 }
-// El servidor sólo envía el teléfono con la entrega en curso (pantalla "actions").
+// El servidor sólo envía teléfono y datos del destinatario con la entrega en curso (pantalla "actions").
 const phone = { display: "+54 9 341 555-0000", tel: "+5493415550000" }
+const finished = { orderCode: base.orderCode, customerName: null, address: null, reference: null, locality: null, parcels: base.parcels }
 const screens = {
   actions: { ...base, screen: { kind: "actions", failedAttempts: 0 }, failedAttempts: 0, phone },
   second: { ...base, screen: { kind: "actions", failedAttempts: 1 }, failedAttempts: 1, phone },
   nophone: { ...base, screen: { kind: "actions", failedAttempts: 0 }, failedAttempts: 0, phone: null },
-  delivered: { ...base, screen: { kind: "delivered" }, failedAttempts: 0, phone: null },
-  returning: { ...base, screen: { kind: "returning" }, failedAttempts: 2, phone: null },
-  returned: { ...base, screen: { kind: "returned" }, failedAttempts: 2, phone: null },
-  incident: { ...base, screen: { kind: "incident" }, failedAttempts: 0, phone: null },
-  cancelled: { ...base, screen: { kind: "cancelled" }, failedAttempts: 0, phone: null },
-  preparing: { ...base, screen: { kind: "preparing" }, failedAttempts: 0, phone: null },
+  delivered: { ...finished, screen: { kind: "delivered" }, failedAttempts: 0, phone: null },
+  returning: { ...finished, screen: { kind: "returning" }, failedAttempts: 2, phone: null },
+  returned: { ...finished, screen: { kind: "returned" }, failedAttempts: 2, phone: null },
+  incident: { ...finished, screen: { kind: "incident" }, failedAttempts: 0, phone: null },
+  cancelled: { ...finished, screen: { kind: "cancelled" }, failedAttempts: 0, phone: null },
+  preparing: { ...finished, screen: { kind: "preparing" }, failedAttempts: 0, phone: null },
 }
 // Portapapeles controlado: ?clipboard=deny simula un navegador que no permite copiar.
 window.__copied = []
@@ -219,6 +220,10 @@ test("pedido ya finalizado o fuera de reparto: sólo estado informativo, sin acc
       assert.equal(await page.getByRole("button").count(), 0, `${screen}: sin botones`)
       assert.equal(await page.locator("[data-courier-phone]").count(), 0, `${screen}: sin teléfono`)
       assert.equal(await page.locator("a[href^='tel:']").count(), 0, `${screen}: sin enlace tel:`)
+      assert.equal(await page.locator("[data-courier-customer], [data-courier-address]").count(), 0, `${screen}: sin nombre ni dirección`)
+      const text = await page.locator("body").innerText()
+      for (const personal of ["María", "Córdoba", "Portón", "Rosario"]) assert.equal(text.includes(personal), false, `${screen}: ${personal}`)
+      assert.ok(text.includes("BX-2041"), `${screen}: conserva el número de pedido`)
       assert.deepEqual(errors, [])
       await shot(page, `cadete-final-${screen}`)
     } finally { await page.close() }
