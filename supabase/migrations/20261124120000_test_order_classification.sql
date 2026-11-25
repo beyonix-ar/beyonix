@@ -19,6 +19,12 @@
 --     migración (ninguna ruta ni rol de la API puede insertar). Cada
 --     autorización fija el comprador, el total, el pago y los ítems exactos
 --     verificados; si el pedido real difiere en algo, no se clasifica.
+--   * El pago tiene que seguir confirmado al momento de clasificar
+--     (payment_status 'approved', financial_status 'payment_confirmed' y
+--     payment_confirmed_at) y el importe confirmado (payment_confirmed_amount)
+--     tiene que ser exactamente el autorizado. Un pago revertido, en
+--     reintegro o con otro importe bloquea la clasificación. No se modifica
+--     ni se consulta nada del pago fuera de la fila del pedido.
 --   * Esta migración autoriza únicamente BX-1019 y BX-1020 (confirmados por
 --     el propietario y verificados en solo lectura el 2026-11-24).
 --   * Además: super_admin, motivo (10-500), número público del pedido como
@@ -69,6 +75,8 @@ create table if not exists public.test_order_authorizations (
   buyer_id uuid not null,
   expected_total numeric(14, 2) not null,
   expected_payment_id text,
+  -- Importe efectivamente confirmado del pago (ordenes.payment_confirmed_amount).
+  expected_payment_amount numeric(14, 2) not null check (expected_payment_amount > 0),
   -- [{orderItemId, productId, variantId, quantity}] ordenado por orderItemId.
   expected_items jsonb not null check (jsonb_typeof(expected_items) = 'array' and jsonb_array_length(expected_items) > 0),
   evidence text not null check (length(btrim(evidence)) between 10 and 1000),
@@ -81,16 +89,16 @@ revoke all on table public.test_order_authorizations from public, anon, authenti
 comment on table public.test_order_authorizations is
   'Compras de prueba autorizadas de antemano (sólo por migración). Fijan comprador, total, pago e ítems exactos: si el pedido difiere, no se puede clasificar.';
 
-insert into public.test_order_authorizations (order_id, buyer_id, expected_total, expected_payment_id, expected_items, evidence)
-select o.id, v.buyer_id, v.expected_total, v.expected_payment_id, v.expected_items, v.evidence
+insert into public.test_order_authorizations (order_id, buyer_id, expected_total, expected_payment_id, expected_payment_amount, expected_items, evidence)
+select o.id, v.buyer_id, v.expected_total, v.expected_payment_id, v.expected_payment_amount, v.expected_items, v.evidence
 from (values
-  (19::bigint, '6ebd099d-2fd4-418b-b3b2-2ff212afad53'::uuid, 20::numeric, '188037020242',
+  (19::bigint, '6ebd099d-2fd4-418b-b3b2-2ff212afad53'::uuid, 20::numeric, '188037020242', 20::numeric,
     '[{"orderItemId": 26, "productId": 22, "variantId": 22, "quantity": 1}]'::jsonb,
     'BX-1019: compra de prueba del propietario confirmada por él (2026-11-24); conserva el producto. Verificado en solo lectura: comprador, ítem 26 variante 22 x1, pago MP aprobado por $20, Factura C autorizada, reclamo #8 cerrado, sin reingresos.'),
-  (20::bigint, '6ebd099d-2fd4-418b-b3b2-2ff212afad53'::uuid, 100::numeric, '190138021303',
+  (20::bigint, '6ebd099d-2fd4-418b-b3b2-2ff212afad53'::uuid, 100::numeric, '190138021303', 100::numeric,
     '[{"orderItemId": 27, "productId": 22, "variantId": 22, "quantity": 1}]'::jsonb,
     'BX-1020: compra de prueba del propietario confirmada por él (2026-11-24); conserva el producto. Verificado en solo lectura: comprador, ítem 27 variante 22 x1, pago MP aprobado por $100, Factura C autorizada, sin reclamos ni reingresos.')
-) as v(order_id, buyer_id, expected_total, expected_payment_id, expected_items, evidence)
+) as v(order_id, buyer_id, expected_total, expected_payment_id, expected_payment_amount, expected_items, evidence)
 join public.ordenes o on o.id = v.order_id
 on conflict (order_id) do nothing;
 
@@ -233,6 +241,16 @@ begin
        or v_items <> v_authorization.expected_items then
       v_blockers := array_append(v_blockers, 'test_authorization_mismatch');
     end if;
+  end if;
+
+  -- Estado e importe ACTUALES del pago (fila del pedido, bloqueada por la RPC).
+  if v_order.payment_status is distinct from 'approved'
+     or v_order.financial_status is distinct from 'payment_confirmed'
+     or v_order.payment_confirmed_at is null then
+    v_blockers := array_append(v_blockers, 'payment_not_confirmed');
+  elsif v_authorization.order_id is not null
+     and v_order.payment_confirmed_amount is distinct from v_authorization.expected_payment_amount then
+    v_blockers := array_append(v_blockers, 'payment_amount_mismatch');
   end if;
 
   -- Además el comprador tiene que seguir siendo una cuenta interna.

@@ -16,6 +16,8 @@ export const TEST_ORDER_BLOCKER_LABELS: Record<string, string> = {
   already_classified: "El pedido ya está clasificado como prueba.",
   not_authorized_test_order: "Este pedido no está autorizado como compra de prueba. Sólo se clasifican pruebas verificadas y autorizadas de antemano.",
   test_authorization_mismatch: "El pedido ya no coincide con la compra de prueba autorizada (comprador, total, pago o artículos).",
+  payment_not_confirmed: "El pago del pedido ya no figura aprobado y confirmado (por ejemplo, se revirtió o está en reintegro).",
+  payment_amount_mismatch: "El importe confirmado del pago no coincide con el de la compra de prueba autorizada.",
   buyer_not_internal: "Sólo se pueden clasificar compras hechas con una cuenta interna del equipo, nunca la de un cliente.",
   local_delivery_return_pending: "Hay un retorno de entrega local pendiente.",
 }

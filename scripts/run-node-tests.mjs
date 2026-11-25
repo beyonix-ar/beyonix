@@ -398,6 +398,7 @@ const TSX_TEST_FILES = [
   "lib/admin/external-sales-import-modal.test.tsx",
   "lib/admin/dashboard-commercial-view.test.tsx",
   "lib/admin/order-test-classification-panel.test.tsx",
+  "lib/admin/admin-order-archive-consistency.test.tsx",
   "lib/admin/dispatch-mobile-control.test.tsx",
   "lib/security/csp-report.test.ts",
   "lib/supabase/proxy-cookies.test.ts",

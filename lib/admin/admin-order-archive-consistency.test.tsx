@@ -2,8 +2,9 @@ import assert from "node:assert/strict"
 import test, { mock } from "node:test"
 import { JSDOM } from "jsdom"
 import { act, createElement } from "react"
+import type { CreditNoteStateOrder } from "../orders/credit-note-state"
 
-test("Admin: NC parcial sin emisión, último rechazo visible y archivo de prueba con bloqueos y motivo", async () => {
+test("Admin: NC parcial sin emisión, NC heredada reintentable y archivo con bloqueos y motivo", async () => {
   const dom = new JSDOM('<div id="root"></div>', { url: "http://localhost" })
   const originals = new Map<string, PropertyDescriptor | undefined>()
   for (const [key, value] of Object.entries({
@@ -22,6 +23,7 @@ test("Admin: NC parcial sin emisión, último rechazo visible y archivo de prueb
   const { LegacyCreditNotePanel } = await import("../../app/admin/sections/pedidos/legacy-credit-note-panel")
   const { OrderArchivePanel } = await import("../../app/admin/sections/pedidos/order-archive-panel")
   const { ADMIN_NOTIFICATIONS_CHANGED_EVENT } = await import("./admin-notifications")
+  const { getCreditNoteState } = await import("../orders/credit-note-state")
   const { createRoot } = await import("react-dom/client")
 
   const calls: Array<{ method: string; path: string; body: unknown }> = []
@@ -75,13 +77,17 @@ test("Admin: NC parcial sin emisión, último rechazo visible y archivo de prueb
 
   try {
     await render()
-    // NC parcial: explica el faltante y nunca ofrece emitir otra.
-    assert.match(text("partial"), /Nota de crédito parcial — requiere revisión/)
-    assert.match(text("partial"), /Falta cubrir\s*\$\s?600/)
+    // NC parcial: el estado único de NC (credit-note-state, desde a57a1f59) la
+    // informa como "Emitida (parcial)"; el panel heredado nunca ofrece emitir otra.
+    assert.equal(text("partial"), "")
     assert.equal(document.querySelector("#partial button"), null, "sin botón de emisión")
-    // NC faltante con un rechazo previo: dice exactamente por qué no se emitió.
-    assert.match(text("rejected"), /Último intento rechazado.*otro ambiente de ARCA/)
-    assert.ok(document.querySelector("#rejected button"), "se puede reintentar")
+    const partialState = getCreditNoteState(partial as CreditNoteStateOrder)
+    assert.equal(partialState.state, "authorized_partial")
+    assert.equal(partialState.emitAction, null)
+    // NC heredada faltante (aunque haya un intento previo): sigue pendiente y se puede reintentar.
+    assert.match(text("rejected"), /Nota de crédito pendiente — caso heredado/)
+    assert.ok(button("Emitir nota de crédito"), "se puede reintentar")
+    assert.equal(getCreditNoteState(pendingWithRejection as CreditNoteStateOrder).emitAction, "legacy")
     // NC autorizada por el total: no se muestra nada pendiente.
     assert.equal(text("covered"), "")
 

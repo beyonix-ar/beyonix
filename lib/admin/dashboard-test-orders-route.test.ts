@@ -71,3 +71,56 @@ test("dashboard: pedidos totales, pagos y ventas excluyen compras de prueba; fac
     }
   }
 })
+
+test("dashboard: Últimos pedidos excluye archivados y compras de prueba sin perder lugares", async () => {
+  const previousEnv = { ...process.env }
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://dashboard-tests.invalid"
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "test-anon"
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service"
+  const visibleAt = (index: number) => new Date(Date.UTC(2026, 10, 24, 20, 0, 0) - index * 60_000).toISOString()
+  // Los tres más recientes son prueba archivada, prueba sin archivar y archivado
+  // normal; detrás hay 9 pedidos operativos.
+  const rows = [
+    { ...TEST_ORDER, id: 19, archived_at: "2026-11-24T21:00:00.000Z", admin_visible_at: visibleAt(0) },
+    { ...TEST_ORDER, id: 20, archived_at: null, admin_visible_at: visibleAt(1) },
+    { ...COMMERCIAL, id: 30, archived_at: "2026-11-24T21:00:00.000Z", admin_visible_at: visibleAt(2) },
+    ...Array.from({ length: 9 }, (_, index) => ({ ...COMMERCIAL, id: 40 + index, archived_at: null, admin_visible_at: visibleAt(3 + index) })),
+  ]
+  const recentRequests: URLSearchParams[] = []
+  const claims = mock.method(AuthClient.prototype, "getClaims", async () => ({ data: { claims: { sub: "owner" } }, error: null }))
+  const errors = mock.method(console, "error", () => {})
+  const fetchMock = mock.method(globalThis, "fetch", async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(String(input))
+    const method = init?.method ?? "GET"
+    if (url.pathname === "/rest/v1/profiles" && url.searchParams.get("id")) return Response.json({ id: "owner", email: null, rol: "super_admin" })
+    if (url.pathname === "/rest/v1/ordenes" && method === "HEAD") {
+      return new Response(null, { status: 200, headers: { "content-range": "*/0" } })
+    }
+    if (url.pathname === "/rest/v1/ordenes" && url.searchParams.get("limit") === "8") {
+      recentRequests.push(url.searchParams)
+      // PostgREST: filtra ANTES de limitar.
+      const filtered = rows.filter((row) =>
+        (url.searchParams.get("archived_at") !== "is.null" || row.archived_at === null) &&
+        (url.searchParams.get("test_order_at") !== "is.null" || row.test_order_at === null))
+      return Response.json(filtered.slice(0, 8))
+    }
+    return Response.json([])
+  })
+  try {
+    const route = await import("../../app/api/admin/dashboard/route")
+    const response = await route.GET(new Request("http://localhost/api/admin/dashboard?refresh=1", { headers: { Authorization: "Bearer token" } }))
+    assert.equal(response.status, 200)
+    const payload = await response.json() as { recentOrders: Array<{ id: number }>; recentActivity: Array<{ detail: string }> }
+
+    assert.equal(recentRequests.length, 1)
+    assert.equal(recentRequests[0].get("archived_at"), "is.null", "Últimos pedidos filtra archivados en la consulta")
+    assert.equal(recentRequests[0].get("test_order_at"), "is.null", "Últimos pedidos filtra compras de prueba en la consulta")
+    assert.deepEqual(payload.recentOrders.map((order) => order.id), [40, 41, 42, 43, 44, 45, 46, 47], "8 pedidos operativos, sin huecos")
+    assert.ok(payload.recentActivity.every((activity) => !/#(19|20|30)\b/.test(activity.detail)), "la actividad reciente tampoco los muestra")
+  } finally {
+    claims.mock.restore(); fetchMock.mock.restore(); errors.mock.restore()
+    for (const key of ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"]) {
+      if (previousEnv[key] === undefined) delete process.env[key]; else process.env[key] = previousEnv[key]
+    }
+  }
+})

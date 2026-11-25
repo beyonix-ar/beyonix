@@ -361,10 +361,13 @@ export async function GET(request: Request) {
     ),
     safeDashboardQuery(
       "ordenes_recientes",
+      // Listado operativo: archivados y compras de prueba no ocupan lugares.
       auth.admin
         .from("ordenes")
         .select(ORDER_SELECT)
         .not("admin_visible_at", "is", null)
+        .is("archived_at", null)
+        .is("test_order_at", null)
         .order("admin_visible_at", { ascending: false })
         .limit(8),
       EMPTY_ROWS_RESULT

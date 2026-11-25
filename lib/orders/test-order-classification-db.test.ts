@@ -106,6 +106,47 @@ test("P1 compras legítimas: el rol interno del comprador no alcanza; sólo auto
   }
 })
 
+test("P2 pago actual: exige pago aprobado y confirmado por el importe autorizado", async () => {
+  const db = await setupDb()
+  try {
+    assert.deepEqual((await db.query<{ order_id: number; amount: string }>(
+      "select order_id::int, expected_payment_amount::text amount from test_order_authorizations order by 1",
+    )).rows, [{ order_id: 19, amount: "20.00" }, { order_id: 20, amount: "100.00" }])
+
+    const cases: Array<[string, string]> = [
+      // Estado del pago cambiado después de la autorización.
+      ["update ordenes set financial_status = 'refund_pending' where id = 19", "payment_not_confirmed"],
+      ["update ordenes set financial_status = 'refunded' where id = 19", "payment_not_confirmed"],
+      ["update ordenes set financial_status = 'cancellation_requested' where id = 19", "payment_not_confirmed"],
+      ["update ordenes set payment_status = 'approved_amount_mismatch' where id = 19", "payment_not_confirmed"],
+      // Pago no confirmado.
+      ["update ordenes set payment_status = 'pending', financial_status = 'pending_payment', payment_confirmed_at = null where id = 19", "payment_not_confirmed"],
+      ["update ordenes set payment_confirmed_at = null where id = 19", "payment_not_confirmed"],
+      // Importe confirmado distinto del autorizado (el total sigue igual).
+      ["update ordenes set payment_confirmed_amount = 19.99 where id = 19", "payment_amount_mismatch"],
+      ["update ordenes set payment_confirmed_amount = 200 where id = 19", "payment_amount_mismatch"],
+      ["update ordenes set payment_confirmed_amount = null where id = 19", "payment_amount_mismatch"],
+    ]
+    for (const [change, code] of cases) {
+      await db.exec("begin")
+      await db.exec(change)
+      assert.ok((await blockersOf(db, 19)).includes(code), change)
+      await assert.rejects(classify(db, 19), new RegExp(`ORDER_TEST_BLOCKED:.*${code}`), change)
+      await db.exec("rollback")
+    }
+
+    const payment = await db.query("select id::int id, payment_status, financial_status, payment_confirmed_amount::text from ordenes where id in (19, 20) order by id")
+    assert.deepEqual(payment.rows, [
+      { id: 19, payment_status: "approved", financial_status: "payment_confirmed", payment_confirmed_amount: "20" },
+      { id: 20, payment_status: "approved", financial_status: "payment_confirmed", payment_confirmed_amount: "100" },
+    ], "ningún rechazo modifica el pago")
+    assert.equal(await count(db, "from ordenes where test_order_at is not null"), 0)
+    assert.equal(await stockOf(db, 22), 6)
+  } finally {
+    await db.close()
+  }
+})
+
 test("pedido autorizado pero activo: bloqueado como en el archivo", async () => {
   const db = await setupDb()
   try {
@@ -217,8 +258,8 @@ test("P2 devoluciones por UPDATE: cantidades y vínculos protegidos; notas permi
   try {
     // BX-1040: 2 unidades, 1 ya devuelta; la clasificación reingresa la otra.
     await db.exec(`
-      insert into ordenes (id, usuario_id, estado, payment_status, financial_status, total, invoice_status, invoice_cae, payment_id)
-        values (40, '${OWNER}', 'entregado', 'approved', 'payment_confirmed', 200, 'authorized', 'CAE-40', 'MP-40');
+      insert into ordenes (id, usuario_id, estado, payment_status, financial_status, payment_confirmed_at, payment_confirmed_amount, total, invoice_status, invoice_cae, payment_id)
+        values (40, '${OWNER}', 'entregado', 'approved', 'payment_confirmed', now(), 200, 200, 'authorized', 'CAE-40', 'MP-40');
       insert into orden_items (id, orden_id, producto_id, variante_id, cantidad) values (40, 40, 30, 30, 2);
       select refresh_inventory_stock(30);
     `)
