@@ -349,6 +349,8 @@ const TEST_FILES = [
   "lib/orders/legacy-credit-note.test.ts",
   "lib/orders/payment-incidents.test.ts",
   "lib/orders/order-consistency.test.ts",
+  "lib/orders/test-order-classification.test.ts",
+  "lib/orders/test-order-classification-db.test.ts",
   "lib/orders/credit-note-mp-settlement.test.ts",
   "lib/mercadopago/refund-closure-sql.test.ts",
   "lib/arca/fiscal-obligation-guards-sql.test.ts",
@@ -395,6 +397,7 @@ const TSX_TEST_FILES = [
   "lib/business/external-sales-file.test.ts",
   "lib/admin/external-sales-import-modal.test.tsx",
   "lib/admin/dashboard-commercial-view.test.tsx",
+  "lib/admin/order-test-classification-panel.test.tsx",
   "lib/admin/dispatch-mobile-control.test.tsx",
   "lib/security/csp-report.test.ts",
   "lib/supabase/proxy-cookies.test.ts",
@@ -413,6 +416,7 @@ const TSX_TEST_FILES = [
   "lib/orders/order-audit-courier-actor-sql.test.ts",
   "lib/analytics/product-views-sql.test.ts",
   "lib/analytics/commerce-sql.test.ts",
+  "lib/analytics/test-order-exclusion-sql.test.ts",
   "lib/analytics/analytics-permissions-sql.test.ts",
   "lib/admin/dispatch-board-api.test.ts",
   "lib/admin/dispatch-filter-bar.test.tsx",
@@ -467,6 +471,7 @@ const DB_TEST_FILES = [
   "lib/analytics/product-view-concurrency.test.mjs",
   "lib/business/external-sales-concurrency.test.mjs",
   "lib/auth/password-reset-atomic-rate-limit-db.test.mjs",
+  "lib/orders/test-order-classification-concurrency.test.mjs",
 ]
 
 // PostgreSQL embebido que además ejercita rutas reales (necesita tsx y
@@ -503,6 +508,8 @@ const SERVER_TSX_TEST_FILES = [
   "lib/admin/system-health-routes.test.ts",
   "lib/admin/external-sales-routes.test.ts",
   "lib/admin/mercadolibre-import-routes.test.ts",
+  "lib/orders/test-order-classification-route.test.ts",
+  "lib/admin/dashboard-test-orders-route.test.ts",
 ]
 
 const missing = [...TEST_FILES, ...TSX_TEST_FILES, ...DB_TEST_FILES, ...DB_ROUTE_TEST_FILES, ...SERVER_TSX_TEST_FILES].filter((file) => !existsSync(file))

@@ -410,9 +410,11 @@ export function DashboardCommercialView({
       return !current
     })
   }
+  // Base fiscal (incluye compras de prueba, que también se facturaron).
+  const fiscalPaidOrders = financialSummary.invoicedOrders + financialSummary.ordersWithoutInvoice
   const invoiceCoverage =
-    financialSummary.paidOrders > 0
-      ? (financialSummary.invoicedOrders / financialSummary.paidOrders) * 100
+    fiscalPaidOrders > 0
+      ? (financialSummary.invoicedOrders / fiscalPaidOrders) * 100
       : 100
 
   return (

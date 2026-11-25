@@ -86,7 +86,7 @@ test("Admin: NC parcial sin emisión, último rechazo visible y archivo de prueb
     assert.equal(text("covered"), "")
 
     // Archivo: primero muestra los bloqueos y no deja confirmar.
-    await click(button("Archivar pedido de prueba"))
+    await click(button("Archivar pedido"))
     await settle()
     assert.match(document.querySelector('[data-testid="order-archive-blockers"]')?.textContent ?? "", /incidente de pago abierto/)
     assert.equal(button("Archivar")?.hasAttribute("disabled"), true)
@@ -95,7 +95,7 @@ test("Admin: NC parcial sin emisión, último rechazo visible y archivo de prueb
 
     // Sin bloqueos: exige motivo, envía una sola vez y queda archivado con aviso a la campana.
     blockers = []
-    await click(button("Archivar pedido de prueba"))
+    await click(button("Archivar pedido"))
     await settle()
     assert.equal(button("Archivar")?.hasAttribute("disabled"), true, "exige motivo")
     await type('textarea[aria-label="Motivo del archivo"]', "Pedido de prueba interna")

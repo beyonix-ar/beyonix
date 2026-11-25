@@ -27,6 +27,8 @@ export interface DashboardSaleOrder {
   financial_status?: string | null
   paid_at?: string | null
   payment_confirmed_amount?: number | null
+  /** Compra de prueba interna clasificada por un super_admin. */
+  test_order_at?: string | null
 }
 
 /**
@@ -40,6 +42,16 @@ export interface DashboardSaleOrder {
 export function isDashboardPaidSale(order: DashboardSaleOrder): boolean {
   if (NON_SALE_PAYMENT_STATUSES.has(order.payment_status ?? "")) return false
   return DASHBOARD_DISPATCHED_OR_PAID_STATES.has(order.estado ?? "") || isOrderPaymentConfirmed(order)
+}
+
+/**
+ * Venta comercial: venta cobrada que no es una compra de prueba interna
+ * (ordenes.test_order_at). Las pruebas siguen contando para los controles
+ * fiscales y de cobro (factura, NC, diferencias de pago), nunca para ventas,
+ * ingresos, ticket promedio, productos vendidos ni resultado.
+ */
+export function isDashboardCommercialSale(order: DashboardSaleOrder): boolean {
+  return isDashboardPaidSale(order) && !order.test_order_at
 }
 
 /**

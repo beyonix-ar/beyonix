@@ -11,7 +11,7 @@ import {
   type MercadoLibreReturnReviewRow,
   type ProductCostRow,
 } from "@/lib/business/dashboard-commercial-ledger"
-import { isDashboardPaidSale } from "@/lib/business/dashboard-financials"
+import { isDashboardCommercialSale, isDashboardPaidSale } from "@/lib/business/dashboard-financials"
 import type { DashboardFinancialSummary } from "@/lib/supabase/queries/dashboard"
 import type {
   SupabasePedido,
@@ -41,6 +41,11 @@ interface RecentActivity {
 // reversión se descuenta aparte (getOrderRevenueReversal).
 function isPaidOrder(order: SupabasePedido) {
   return isDashboardPaidSale(order)
+}
+
+// Venta comercial = venta cobrada que no es compra de prueba interna.
+function isCommercialOrder(order: SupabasePedido) {
+  return isDashboardCommercialSale(order)
 }
 
 function getPaymentMethodLabel(order: SupabasePedido | undefined) {
@@ -234,6 +239,7 @@ const ORDER_SELECT = `
   shipping_cost_charged,
   transfer_discount_amount,
   invoice_status,
+  test_order_at,
   created_at
 `
 
@@ -292,6 +298,7 @@ const FINANCIAL_ORDER_SELECT = `
   credit_note_required,
   credit_note_status,
   credit_note_amount,
+  test_order_at,
   created_at
 `
 
@@ -348,7 +355,8 @@ export async function GET(request: Request) {
       auth.admin
         .from("ordenes")
         .select("id", { count: "exact", head: true })
-        .not("admin_visible_at", "is", null),
+        .not("admin_visible_at", "is", null)
+        .is("test_order_at", null),
       EMPTY_COUNT_RESULT
     ),
     safeDashboardQuery(
@@ -393,7 +401,8 @@ export async function GET(request: Request) {
       auth.admin
         .from("ordenes")
         .select("id", { count: "exact", head: true })
-        .or(paidOrderFilter),
+        .or(paidOrderFilter)
+        .is("test_order_at", null),
       EMPTY_COUNT_RESULT
     ),
     safeDashboardQuery(
@@ -730,13 +739,16 @@ export async function GET(request: Request) {
     ? marketplaceScan.rows
     : (mercadoLibreResult.data ?? []) as Array<Record<string, unknown>>
   const financialOrders = financialOrdersScan.rows
-  const paidCandidateOrders = sensitive
+  // Cobros reales (incluye compras de prueba): base de los controles fiscales
+  // y de cobro. Las ventas comerciales excluyen las pruebas.
+  const fiscalPaidOrders = sensitive
     ? financialOrders.filter(isPaidOrder)
     : [
         ...recentOrders.filter(isPaidOrder),
         ...pendingDispatchOrders,
         ...pendingInvoiceOrders,
       ]
+  const paidCandidateOrders = fiscalPaidOrders.filter(isCommercialOrder)
   const paidOrderIds = new Set(paidCandidateOrders.map((order) => order.id))
   const items = orderItemsScan.rows.filter((item) => paidOrderIds.has(item.orden_id))
   const itemsByOrderId = groupItemsByOrder(items)
@@ -815,10 +827,10 @@ export async function GET(request: Request) {
   const negativeStockItems =
     negativeVariants.length + unexplainedNegativeProducts
   const { totals, channels } = ledger
-  const invoicedOrders = paidCandidateOrders.filter(
+  const invoicedOrders = fiscalPaidOrders.filter(
     (order) => order.invoice_status === "authorized",
   )
-  const ordersWithPaymentMismatch = paidCandidateOrders.filter((order) => {
+  const ordersWithPaymentMismatch = fiscalPaidOrders.filter((order) => {
     if (order.payment_confirmed_amount == null) return false
 
     const expected = Number(order.external_amount_due ?? order.total ?? 0)
@@ -830,10 +842,10 @@ export async function GET(request: Request) {
       order.shipping_cost_real == null &&
       order.andreani_costo == null,
   ).length
-  const invoiceErrors = paidCandidateOrders.filter(
+  const invoiceErrors = fiscalPaidOrders.filter(
     (order) => order.invoice_status === "error",
   ).length
-  const creditNotesPending = paidCandidateOrders.filter(
+  const creditNotesPending = fiscalPaidOrders.filter(
     (order) =>
       order.credit_note_required && order.credit_note_status !== "authorized",
   ).length
@@ -953,7 +965,7 @@ export async function GET(request: Request) {
     invoicedOrders: invoicedOrders.length,
     ordersWithPaymentMismatch,
     ordersMissingShippingCost,
-    ordersWithoutInvoice: paidCandidateOrders.length - invoicedOrders.length,
+    ordersWithoutInvoice: fiscalPaidOrders.length - invoicedOrders.length,
     invoiceErrors,
     creditNotesPending,
     negativeStockItems,
@@ -966,7 +978,7 @@ export async function GET(request: Request) {
   }
   const commercialSales: CommercialSale[] = sensitive ? ledger.sales : []
   const paidExpensesByDate = sensitive ? ledger.expenses.paidByDate : []
-  const recentWebSales: RecentActivity[] = recentOrders.filter(isPaidOrder).map((order) => {
+  const recentWebSales: RecentActivity[] = recentOrders.filter(isCommercialOrder).map((order) => {
     const orderItems = itemsByOrderId.get(order.id) ?? []
     const firstItem = orderItems[0]
     const additionalItems = Math.max(0, orderItems.length - 1)

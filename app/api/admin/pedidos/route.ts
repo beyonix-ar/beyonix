@@ -6,6 +6,7 @@ import { loadAdminPendingFacts } from "@/lib/orders/admin-pending-facts-server"
 import { loadLocalDeliveryOutcomeSummaries } from "@/lib/orders/local-delivery-outcomes-server"
 import type { CustomerLocalDeliveryOutcome } from "@/lib/shipping/local-delivery-outcome"
 import { getPaymentIncidents, isPaymentIncidentAction, PAYMENT_INCIDENT_ACTIONS } from "@/lib/orders/payment-incidents"
+import { parseAdminArchiveFilter } from "@/lib/orders/order-visibility"
 import type {
   SupabasePedido,
   SupabasePedidoItem,
@@ -36,6 +37,10 @@ export async function GET(request: Request) {
   const search = (url.searchParams.get("search") ?? "").trim()
   if (!Number.isFinite(requestedLimit) || !Number.isFinite(requestedOffset) || !Number.isSafeInteger(orderId) || orderId < 0) return Response.json({ error: "Los filtros del pedido no son válidos." }, { status: 400 })
   if (search.length > 160) return Response.json({ error: "La búsqueda es demasiado larga." }, { status: 400 })
+  // Listado operativo: sin archivados (pruebas). La búsqueda, el detalle por id
+  // y la campana no filtran archivados: nunca se pierde un pedido ni una alerta.
+  const archiveFilter = parseAdminArchiveFilter(url.searchParams.get("archive"))
+  if (!archiveFilter) return Response.json({ error: "El filtro de archivados no es válido." }, { status: 400 })
   let searchTotal: number | null = null
   let searchIds: number[] | null = null
   const limit = Math.min(100, Math.max(10, Math.floor(requestedLimit)))
@@ -110,8 +115,10 @@ export async function GET(request: Request) {
   } else if (searchIds) {
     ordersQuery = ordersQuery.in("id", searchIds).order("admin_visible_at", { ascending: false }).order("id", { ascending: false })
   } else {
+    ordersQuery = ordersQuery.not("admin_visible_at", "is", null)
+    if (archiveFilter === "active") ordersQuery = ordersQuery.is("archived_at", null)
+    else if (archiveFilter === "archived") ordersQuery = ordersQuery.not("archived_at", "is", null)
     ordersQuery = ordersQuery
-      .not("admin_visible_at", "is", null)
       .order("admin_visible_at", { ascending: false })
       .range(offset, offset + limit - 1)
   }

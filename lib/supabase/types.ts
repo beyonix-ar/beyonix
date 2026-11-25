@@ -480,6 +480,15 @@ export interface SupabasePedido {
   dispatch_progress?: DispatchProgress | null
   /** Calculado por el servidor (Envío BEYONIX): resultado del cadete, retorno y reserva. */
   local_delivery_outcome?: CustomerLocalDeliveryOutcome | null
+  /** Archivo de pedidos (fuera del listado operativo; nunca implica borrado). */
+  archived_at?: string | null
+  archived_by?: string | null
+  archive_reason?: string | null
+  customer_hidden_at?: string | null
+  /** Compra de prueba interna: fuera de las estadísticas comerciales. */
+  test_order_at?: string | null
+  test_order_by?: string | null
+  test_order_reason?: string | null
 }
 
 export interface SupabaseMercadoPagoOrderRefund {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { requireAdmin } from "@/app/api/admin/clientes/_auth"
+import type { AdminApiAuth } from "@/lib/auth/admin-api"
 import { describeOrderBlockers } from "@/lib/orders/order-visibility"
 
 export const runtime = "nodejs"
@@ -10,21 +11,23 @@ const ERRORS: Record<string, { status: number; message: string }> = {
   ORDER_ARCHIVE_REASON_REQUIRED: { status: 400, message: "Indicá el motivo (entre 5 y 500 caracteres)." },
   ORDER_NOT_FOUND: { status: 404, message: "El pedido no existe." },
   ORDER_NOT_ARCHIVED: { status: 409, message: "El pedido no está archivado." },
+  ORDER_ARCHIVE_HIDE_REQUIRES_TEST: { status: 409, message: "Sólo una compra de prueba clasificada puede ocultarse de la cuenta del cliente." },
+  ORDER_TEST_ARCHIVE_LOCKED: { status: 409, message: "Una compra de prueba queda archivada y no vuelve al listado operativo." },
 }
 
-type Auth = Exclude<Awaited<ReturnType<typeof requireAdmin>>, { error: unknown }>
+type Access = { ok: false; response: Response } | { ok: true; auth: AdminApiAuth; orderId: number }
 
-async function authorize(request: Request, params: Promise<{ id: string }>) {
+async function authorize(request: Request, params: Promise<{ id: string }>): Promise<Access> {
   const auth = await requireAdmin(request)
-  if ("error" in auth) return { response: auth.error }
+  if ("error" in auth) return { ok: false, response: auth.error }
   if (auth.profile.rol !== "super_admin") {
-    return { response: NextResponse.json({ error: ERRORS.ORDER_ARCHIVE_FORBIDDEN.message }, { status: 403 }) }
+    return { ok: false, response: NextResponse.json({ error: ERRORS.ORDER_ARCHIVE_FORBIDDEN.message }, { status: 403 }) }
   }
   const orderId = Number((await params).id)
   if (!Number.isSafeInteger(orderId) || orderId <= 0) {
-    return { response: NextResponse.json({ error: "Pedido inválido." }, { status: 400 }) }
+    return { ok: false, response: NextResponse.json({ error: "Pedido inválido." }, { status: 400 }) }
   }
-  return { auth: auth as Auth, orderId }
+  return { ok: true, auth, orderId }
 }
 
 async function readReason(request: Request) {
@@ -55,7 +58,7 @@ function rpcErrorResponse(message: string | undefined, fallback: string) {
 /** Qué impide archivar el pedido (vacío = se puede archivar). Sólo lectura. */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const access = await authorize(request, params)
-  if ("response" in access) return access.response
+  if (!access.ok) return access.response
   const { data, error } = await access.auth.admin.rpc("order_archive_blockers", { p_order_id: access.orderId })
   if (error || !Array.isArray(data)) {
     console.error("ORDER_ARCHIVE_BLOCKERS_ERROR", { orderId: access.orderId, message: error?.message })
@@ -72,7 +75,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
  */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const access = await authorize(request, params)
-  if ("response" in access) return access.response
+  if (!access.ok) return access.response
   const { reason, hideFromCustomer } = await readReason(request)
   if (reason.length < 5 || reason.length > 500) {
     return NextResponse.json({ error: ERRORS.ORDER_ARCHIVE_REASON_REQUIRED.message }, { status: 400 })
@@ -93,7 +96,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 /** Restaura un pedido archivado al listado operativo (con motivo y auditoría). */
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const access = await authorize(request, params)
-  if ("response" in access) return access.response
+  if (!access.ok) return access.response
   const { reason } = await readReason(request)
   if (reason.length < 5 || reason.length > 500) {
     return NextResponse.json({ error: ERRORS.ORDER_ARCHIVE_REASON_REQUIRED.message }, { status: 400 })

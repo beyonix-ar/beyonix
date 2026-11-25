@@ -6,6 +6,8 @@ import { getPendingRefundNotes } from "@/lib/order-claims"
 import { argentinaDateKey } from "@/lib/business/dashboard-timezone"
 import { OrderReplacements } from "./order-replacements"
 import { LegacyCreditNotePanel } from "./legacy-credit-note-panel"
+import { OrderArchivePanel } from "./order-archive-panel"
+import { OrderTestClassificationPanel } from "./order-test-classification-panel"
 import { PaymentIncidentsPanel } from "./payment-incidents-panel"
 import { OrderDispatchStatus } from "./order-dispatch-status"
 import { LocalDeliveryOrderCard } from "./local-delivery-order-card"
@@ -183,6 +185,8 @@ type StatusFilter =
   | "refund_pending"
   | "refunded"
   | "rechazado"
+  /** Pedidos archivados (pruebas): no aparecen en ningún otro filtro del listado. */
+  | "archivados"
 type AndreaniAction = "crear-envio" | "tracking"
 type AndreaniLabelAction = "view" | "download" | "print"
 type AdminNotice = { type: "ok" | "error"; message: string } | null
@@ -1250,10 +1254,11 @@ const ORDER_GENERAL_STATUS_META: Record<
 
 function EstadoBadge({ pedido }: { pedido: SupabasePedido }) {
   const { label, tone } = ORDER_GENERAL_STATUS_META[getOrderGeneralStatus(pedido)]
+  const suffix = [pedido.test_order_at ? "Prueba" : null, pedido.archived_at ? "Archivado" : null].filter(Boolean).join(" · ")
 
   return (
     <span className={`admin-order-semantic-badge admin-order-semantic-badge--${tone}`}>
-      {label}
+      {suffix ? `${label} · ${suffix}` : label}
     </span>
   )
 }
@@ -5422,6 +5427,13 @@ function PedidoDetailModal({
           />
           )}
 
+          {activeView === "historial" && isSuperAdmin && (
+            <div className="mb-3 flex flex-col gap-3">
+              <OrderTestClassificationPanel pedido={pedido} onUpdated={onRefundUpdated} />
+              <OrderArchivePanel pedido={pedido} onUpdated={onRefundUpdated} />
+            </div>
+          )}
+
           {activeView === "historial" && (
             <OrderTimeline pedido={pedido} />
           )}
@@ -6996,6 +7008,7 @@ export function AdminPedidos({
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const { user, isSuperAdmin } = useAuth()
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("todos")
   const isAdmin = getAdminCapabilities(user?.rol).canManageFinancials
   const [search, setSearch] = useState("")
   const [serverSearch, setServerSearch] = useState("")
@@ -7009,8 +7022,11 @@ export function AdminPedidos({
     error,
     updatePedidoEstado,
     reloadPedidos,
-  } = usePedidos({ orderId: initialOrderId, search: serverSearch })
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("todos")
+  } = usePedidos({
+    orderId: initialOrderId,
+    search: serverSearch,
+    archive: statusFilter === "archivados" ? "archived" : "active",
+  })
   const [attentionFilter, setAttentionFilter] =
     useState<AdminNotificationTone | "all">(() => {
       const value = searchParams.get("attention")
@@ -7345,7 +7361,11 @@ export function AdminPedidos({
         searchableText.includes(normalizedSearch),
         compactSearch.length > 0 && searchableText.replace(/[#\s-]/g, "").includes(compactSearch),
       ].some(Boolean)
+      // El servidor ya separa archivados (filtro "Archivados") de operativos;
+      // la búsqueda devuelve ambos, así que acá se respeta igual.
       const matchesStatus =
+        statusFilter === "archivados" ? Boolean(pedido.archived_at) :
+        Boolean(pedido.archived_at) && serverSearch.length === 0 ? false :
         statusFilter === "todos" ||
         getDisplayedOrderStatus(pedido) === statusFilter ||
         pedido.estado === statusFilter ||
@@ -8069,6 +8089,7 @@ export function AdminPedidos({
                 <option value="refund_pending">Reintegro pendiente</option>
                 <option value="refunded">Reintegrados</option>
                 <option value="rechazado">Comprobantes rechazados</option>
+                {isSuperAdmin && <option value="archivados">Archivados</option>}
               </AdminSelect>
             </div>
           </AdminFiltersBar>

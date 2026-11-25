@@ -19,6 +19,7 @@ import {
 import { supabase } from "@/lib/supabase/client"
 import { describeAdminLoadError } from "@/lib/admin/request-error"
 import { shareUnchanged } from "@/lib/admin/structural-sharing"
+import type { AdminArchiveFilter } from "@/lib/orders/order-visibility"
 
 const REALTIME_PEDIDOS_TABLES = [
   "ordenes",
@@ -48,7 +49,11 @@ function dedupePedidos(pedidos: SupabasePedido[]) {
 // Hook
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function usePedidos({ orderId, search = "" }: { orderId?: number; search?: string } = {}) {
+export function usePedidos({
+  orderId,
+  search = "",
+  archive = "active",
+}: { orderId?: number; search?: string; archive?: AdminArchiveFilter } = {}) {
   const requestIdRef = useRef(0)
   const channelNameRef = useRef(
     `admin-pedidos-live-${Math.random().toString(36).slice(2)}`,
@@ -74,7 +79,7 @@ export function usePedidos({ orderId, search = "" }: { orderId?: number; search?
       try {
         if (!silent) setLoading(true)
 
-        const pages = await Promise.all(Array.from({ length: orderId ? 1 : Math.ceil(visibleLimit / 50) }, (_, page) => getPedidos({ limit: 50, offset: page * 50, orderId, search })))
+        const pages = await Promise.all(Array.from({ length: orderId ? 1 : Math.ceil(visibleLimit / 50) }, (_, page) => getPedidos({ limit: 50, offset: page * 50, orderId, search, archive })))
         const data = { pedidos: pages.flatMap((page) => page.pedidos), total: pages[0].total }
 
         if (requestId !== requestIdRef.current) return
@@ -96,9 +101,9 @@ export function usePedidos({ orderId, search = "" }: { orderId?: number; search?
       } finally {
         if (requestId === requestIdRef.current) setLoading(false)
       }
-    }, [orderId, search, visibleLimit])
+    }, [orderId, search, archive, visibleLimit])
 
-  useEffect(() => { setVisibleLimit(orderId ? 1 : 50) }, [orderId, search])
+  useEffect(() => { setVisibleLimit(orderId ? 1 : 50) }, [orderId, search, archive])
 
   // ───────────────────────────────────────────────────────────────────────────
   // First load

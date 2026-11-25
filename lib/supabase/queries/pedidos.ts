@@ -4,6 +4,7 @@ import { AdminRequestError } from "@/lib/admin/request-error"
 import type {
   SupabasePedido,
 } from "@/lib/supabase/types"
+import type { AdminArchiveFilter } from "@/lib/orders/order-visibility"
 
 export async function getPedidos({
   notificationView = false,
@@ -11,12 +12,14 @@ export async function getPedidos({
   offset = 0,
   orderId,
   search = "",
+  archive = "active",
 }: {
   notificationView?: boolean
   limit?: number
   offset?: number
   orderId?: number
   search?: string
+  archive?: AdminArchiveFilter
 } = {}) {
   const {
     data: { session },
@@ -35,6 +38,7 @@ export async function getPedidos({
   } else {
     params.set("limit", String(limit))
     params.set("offset", String(offset))
+    params.set("archive", archive)
   }
 
   const response = await fetch(
