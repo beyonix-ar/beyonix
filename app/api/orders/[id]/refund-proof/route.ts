@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 
 import { PAYMENT_PROOF_BUCKET } from "@/lib/payments/transfer"
 import { isCustomerOrderOwner } from "@/lib/orders/customer-order-ownership"
+import { isCustomerTestOrder } from "@/lib/orders/order-visibility"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 
@@ -34,7 +35,7 @@ export async function GET(
   const admin = createAdminClient()
   const { data: order, error } = await admin
     .from("ordenes")
-    .select("id, usuario_id, cliente_email, refund_proof_url, refund_proof_file_name")
+    .select("id, usuario_id, cliente_email, refund_proof_url, refund_proof_file_name, test_order_at")
     .eq("id", orderId)
     .maybeSingle()
 
@@ -44,6 +45,11 @@ export async function GET(
 
   if (!isCustomerOrderOwner(order, user) || !order.usuario_id && !user.email_confirmed_at) {
     return NextResponse.json({ error: "No autorizado." }, { status: 403 })
+  }
+  // Compra de prueba clasificada: para el cliente no existe (tras validar
+  // titularidad, así un tercero nunca distingue una prueba de otro pedido).
+  if (isCustomerTestOrder(order)) {
+    return NextResponse.json({ error: "No encontramos el pedido." }, { status: 404 })
   }
 
   if (!order.refund_proof_url) {

@@ -11,7 +11,11 @@
  *   nunca aprobado, reemplazado por otro intento o abandonado): el Admin
  *   tampoco los ve (admin_visible_at nunca se completó),
  * - pedidos archivados explícitamente como prueba con "ocultar al cliente"
- *   (customer_hidden_at), que sólo puede marcar un super_admin.
+ *   (customer_hidden_at), que sólo puede marcar un super_admin,
+ * - compras de prueba clasificadas (test_order_at): fuera de toda la
+ *   experiencia del cliente (listado, detalle, reclamos, reseñas, factura,
+ *   cancelación, notificaciones). Admin, pagos, facturas y auditoría las
+ *   conservan intactas.
  * Nunca se infiere "prueba" por monto, email ni fecha.
  *
  * Admin — listado operativo: admin_visible_at (pago aprobado o transferencia
@@ -42,6 +46,7 @@ export interface OrderTraceRow {
   andreani_envio_id?: string | null
   order_claims?: unknown[] | null
   customer_hidden_at?: string | null
+  test_order_at?: string | null
 }
 
 /** Estados de pago que implican dinero recibido (aunque luego se haya devuelto). */
@@ -92,8 +97,16 @@ export function isAbandonedCheckoutAttempt(order: OrderTraceRow): boolean {
   )
 }
 
+/**
+ * Compra de prueba clasificada: no existe para el cliente. Las rutas del
+ * cliente la tratan como "pedido no encontrado" (nunca revelan que existe).
+ */
+export function isCustomerTestOrder(order: { test_order_at?: string | null }): boolean {
+  return Boolean(order.test_order_at)
+}
+
 export function isCustomerOrderVisible(order: OrderTraceRow): boolean {
-  if (order.customer_hidden_at) return false
+  if (order.customer_hidden_at || isCustomerTestOrder(order)) return false
   return !isAbandonedCheckoutAttempt(order)
 }
 

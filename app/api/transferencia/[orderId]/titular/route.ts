@@ -8,11 +8,12 @@ import {
   loadTransferReservationDeadline,
 } from "@/lib/orders/transfer-reservation-window"
 import { getTransferBankDetails } from "@/lib/payments/transfer-bank-details"
+import { isCustomerTestOrder } from "@/lib/orders/order-visibility"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 
 const ORDER_FIELDS =
-  "id, usuario_id, estado, payment_method_id, payment_status, payment_proof_url, payment_proof_uploaded_at, transfer_verification_status, external_amount_due, total"
+  "id, usuario_id, estado, payment_method_id, payment_status, payment_proof_url, payment_proof_uploaded_at, transfer_verification_status, external_amount_due, total, test_order_at"
 
 /**
  * Guarda y valida los datos del titular que va a transferir y RECIÉN
@@ -58,6 +59,9 @@ export async function POST(
       }
     } else if (!verifyGuestOrderAccessToken(request.headers.get("x-guest-order-token"), pedidoId)) {
       return NextResponse.json({ error: "No autorizado." }, { status: 403 })
+    }
+    if (isCustomerTestOrder(order)) {
+      return NextResponse.json({ error: "No encontramos el pedido." }, { status: 404 })
     }
 
     if (!isTransferReservationActive(await loadTransferReservationDeadline(admin, pedidoId))) {

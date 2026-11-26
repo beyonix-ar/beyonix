@@ -3,6 +3,7 @@ import "server-only"
 import { NextResponse } from "next/server"
 
 import { isCustomerOrderOwner } from "./customer-order-ownership.ts"
+import { isCustomerTestOrder } from "./order-visibility.ts"
 import { claimErrorResponse } from "./claim-server.ts"
 import { createAdminClient } from "../supabase/admin.ts"
 import { createClient } from "../supabase/server.ts"
@@ -19,9 +20,11 @@ export async function authorizeCustomerClaimOrder(rawId: string) {
   const orderId = Number(rawId)
   if (!Number.isSafeInteger(orderId) || orderId <= 0) return { response: claimErrorResponse(new Error("CLAIM_INVALID")) }
   const admin = createAdminClient()
-  const { data: order, error } = await admin.from("ordenes").select("id, usuario_id, cliente_email, estado, delivered_at").eq("id", orderId).maybeSingle()
+  const { data: order, error } = await admin.from("ordenes").select("id, usuario_id, cliente_email, estado, delivered_at, test_order_at").eq("id", orderId).maybeSingle()
   if (error || !order) return { response: NextResponse.json({ error: "No encontramos el pedido." }, { status: 404 }) }
   if (!isCustomerOrderOwner(order, user) || !order.usuario_id && !user.email_confirmed_at) return { response: claimErrorResponse(new Error("CLAIM_FORBIDDEN")) }
+  // Compra de prueba: sin reclamos, lecturas ni etiquetas para el cliente (Admin los conserva).
+  if (isCustomerTestOrder(order)) return { response: NextResponse.json({ error: "No encontramos el pedido." }, { status: 404 }) }
   return { admin, order, user }
 }
 

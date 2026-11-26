@@ -9,12 +9,13 @@ import {
 } from "@/lib/orders/transfer-reservation-window"
 import { isAwaitingTransferPayment } from "@/lib/orders/transfer-verification-reasons"
 import { verifyGuestOrderAccessToken } from "@/lib/orders/guest-order-token"
+import { isCustomerTestOrder } from "@/lib/orders/order-visibility"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 import type { SupabasePedido } from "@/lib/supabase/types"
 
 const ORDER_PROOF_FIELDS =
-  "id, usuario_id, created_at, estado, payment_method_id, payment_status, payment_proof_url, payment_proof_uploaded_at, payment_proof_file_name, financial_status, paid_at, payment_confirmed_amount, total, external_amount_due, transfer_verification_status, transfer_payer_first_name, transfer_payer_last_name, transfer_payer_dni, transfer_amount_declared"
+  "id, usuario_id, created_at, estado, payment_method_id, payment_status, payment_proof_url, payment_proof_uploaded_at, payment_proof_file_name, financial_status, paid_at, payment_confirmed_amount, total, external_amount_due, transfer_verification_status, transfer_payer_first_name, transfer_payer_last_name, transfer_payer_dni, transfer_amount_declared, test_order_at"
 
 function stripBucket(path: string) {
   return path.startsWith(`${PAYMENT_PROOF_BUCKET}/`)
@@ -58,6 +59,9 @@ export async function GET(
     if (!verifyGuestOrderAccessToken(guestToken, pedidoId)) {
       return NextResponse.json({ error: "No autorizado." }, { status: 403 })
     }
+  }
+  if (isCustomerTestOrder(order)) {
+    return NextResponse.json({ error: "No encontramos el pedido." }, { status: 404 })
   }
 
   const currentOrder = await expireTransferOrderIfNeeded(

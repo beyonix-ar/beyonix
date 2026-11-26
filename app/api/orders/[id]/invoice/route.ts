@@ -6,6 +6,7 @@ import {
   type InvoicePdfOrder,
 } from "@/lib/arca/invoice-pdf"
 import { loadFiscalInvoiceTotal, loadFiscalPdfItems } from "@/lib/arca/invoice-pdf-data"
+import { isCustomerTestOrder } from "@/lib/orders/order-visibility"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 
@@ -94,7 +95,7 @@ export async function GET(
     )
   }
 
-  if (!order || order.invoice_status !== "authorized") {
+  if (!order || isCustomerTestOrder(order) || order.invoice_status !== "authorized") {
     return NextResponse.json(
       { error: "Factura no encontrada o sin autorización de acceso." },
       { status: 404 },

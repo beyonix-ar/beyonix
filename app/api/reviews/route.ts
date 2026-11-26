@@ -23,6 +23,12 @@ const HOME_FEATURED_REVIEWS_LIMIT = 12
 // user_id sólo se usa del lado del servidor para resolver el primer nombre
 // público (profiles.nombre); nunca se devuelve al navegador.
 const PUBLIC_REVIEW_COLUMNS = "id, user_id, rating, comment, city, province, created_at"
+// Reseñas de compras de prueba (ordenes.test_order_at): fuera de listados y
+// promedios públicos. Se filtran en la misma consulta (join interno con su
+// pedido, siempre presente: reviews.order_id es NOT NULL con FK), así nunca
+// ocupan lugares del límite. La fila del pedido no se devuelve al navegador.
+const NON_TEST_ORDER_JOIN = "ordenes!inner(test_order_at)"
+const NON_TEST_ORDER_FILTER = "ordenes.test_order_at"
 
 export async function GET(request: Request) {
   try {
@@ -41,15 +47,17 @@ export async function GET(request: Request) {
       ? admin
           .schema("public")
           .from("reviews")
-          .select(PUBLIC_REVIEW_COLUMNS)
+          .select(`${PUBLIC_REVIEW_COLUMNS}, ${NON_TEST_ORDER_JOIN}`)
           .eq("approved", true)
+          .is(NON_TEST_ORDER_FILTER, null)
           .eq("product_id", productId)
           .order("created_at", { ascending: false })
       : admin
           .schema("public")
           .from("reviews")
-          .select(PUBLIC_REVIEW_COLUMNS)
+          .select(`${PUBLIC_REVIEW_COLUMNS}, ${NON_TEST_ORDER_JOIN}`)
           .eq("approved", true)
+          .is(NON_TEST_ORDER_FILTER, null)
           .eq("featured", true)
           .is("product_id", null)
           .order("created_at", { ascending: false })
@@ -63,8 +71,9 @@ export async function GET(request: Request) {
         : admin
             .schema("public")
             .from("reviews")
-            .select("rating")
+            .select(`rating, ${NON_TEST_ORDER_JOIN}`)
             .eq("approved", true)
+            .is(NON_TEST_ORDER_FILTER, null)
             .is("product_id", null),
     ])
 
@@ -109,34 +118,47 @@ export async function GET(request: Request) {
       }
 
       if (hasOrder) {
-        const [ownProductResult, ownExperienceResult, orderWindow] = await Promise.all([
-          admin
-            .schema("public")
-            .from("reviews")
-            .select("product_id, rating, comment")
-            .eq("user_id", user.id)
-            .eq("order_id", orderId)
-            .not("product_id", "is", null),
-          admin
-            .schema("public")
-            .from("reviews")
-            .select("id, order_id, rating, comment, created_at")
-            .eq("user_id", user.id)
-            .eq("order_id", orderId)
-            .is("product_id", null)
-            .maybeSingle(),
-          getOwnOrderReviewWindow(admin, user.id, orderId).catch((windowError: unknown) => {
-            console.error("REVIEW WINDOW ERROR:", windowError)
-            return null
-          }),
-        ])
-
-        if (!ownProductResult.error) {
-          ownProductReviews = ownProductResult.data ?? []
+        // FAIL-CLOSED: primero se verifica que la compra sea del usuario y no
+        // sea de prueba; recién entonces se leen sus reseñas propias. Si la
+        // verificación falla, error controlado y ningún dato de esa compra.
+        let orderWindow: ReviewWindow | null
+        try {
+          orderWindow = await getOwnOrderReviewWindow(admin, user.id, orderId)
+        } catch (windowError) {
+          console.error("REVIEW WINDOW ERROR:", windowError)
+          return Response.json(
+            { error: "No pudimos cargar las reseñas de esta compra." },
+            { status: 503, headers: { "Cache-Control": "no-store" } }
+          )
         }
 
-        if (!ownExperienceResult.error) {
-          ownExperienceReview = ownExperienceResult.data ?? null
+        // null = la compra no es del usuario o es de prueba: sin reseñas propias.
+        if (orderWindow) {
+          const [ownProductResult, ownExperienceResult] = await Promise.all([
+            admin
+              .schema("public")
+              .from("reviews")
+              .select("product_id, rating, comment")
+              .eq("user_id", user.id)
+              .eq("order_id", orderId)
+              .not("product_id", "is", null),
+            admin
+              .schema("public")
+              .from("reviews")
+              .select("id, order_id, rating, comment, created_at")
+              .eq("user_id", user.id)
+              .eq("order_id", orderId)
+              .is("product_id", null)
+              .maybeSingle(),
+          ])
+
+          if (!ownProductResult.error) {
+            ownProductReviews = ownProductResult.data ?? []
+          }
+
+          if (!ownExperienceResult.error) {
+            ownExperienceReview = ownExperienceResult.data ?? null
+          }
         }
 
         reviewWindow = orderWindow
@@ -277,6 +299,15 @@ export async function POST(request: Request) {
 
     // El trigger de la base vuelve a validar plazo y comentario: si el plazo
     // venció entre la validación y el insert, se informa igual que arriba.
+    // Compra clasificada como prueba entre la validación y el insert: el
+    // trigger reviews_block_test_orders la rechaza igual que la elegibilidad.
+    if (error?.message?.includes("REVIEW_TEST_ORDER")) {
+      return Response.json(
+        { error: "No encontramos una compra verificada disponible para reseñar." },
+        { status: 403 }
+      )
+    }
+
     if (error?.message?.includes("REVIEW_WINDOW_EXPIRED")) {
       return Response.json(
         { error: "El período para dejar una reseña finalizó." },

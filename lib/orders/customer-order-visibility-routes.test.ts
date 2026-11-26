@@ -39,8 +39,9 @@ class OrderQuery {
     return this
   }
 
+  // Columna ausente en la fila = NULL en la base.
   is(column: string, value: null) {
-    this.predicates.push((row) => row[column] === value)
+    this.predicates.push((row) => (row[column] ?? null) === value)
     return this
   }
 
@@ -83,6 +84,8 @@ async function loadRoute(path: string) {
     "@/lib/orders/customer-order-audit-view": "export const toCustomerSafeOrderAuditEvents = (events) => events ?? []",
     "@/lib/orders/customer-claim-access": "export const attachCustomerClaimReads = async () => []",
     "@/lib/orders/transfer-reservation-window": "export const attachTransferReservationDeadlines = async (_admin, orders) => orders",
+    "@/lib/orders/dispatch-cutoff-server": "export const attachDispatchCutoff = async (_admin, orders) => orders",
+    "@/lib/orders/local-delivery-outcomes-server": "export const attachCustomerLocalDeliveryOutcomes = async (_admin, orders) => orders",
   }
   const result = await build({
     entryPoints: [resolve(process.cwd(), path)],

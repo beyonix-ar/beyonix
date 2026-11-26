@@ -13,6 +13,7 @@ import {
   TRANSFER_PROOF_UPLOAD_ELIGIBLE_PAYMENT_STATUSES,
   canUploadTransferProof,
 } from "@/lib/orders/transfer-verification-reasons"
+import { isCustomerTestOrder } from "@/lib/orders/order-visibility"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 import { safeErrorMetadata } from "@/lib/security/safe-error"
@@ -139,7 +140,7 @@ export async function POST(request: Request) {
     const { data: order, error: orderError } = await admin
       .from("ordenes")
       .select(
-        "id, usuario_id, estado, created_at, payment_method_id, payment_status, payment_proof_url, payment_proof_uploaded_at, financial_status",
+        "id, usuario_id, estado, created_at, payment_method_id, payment_status, payment_proof_url, payment_proof_uploaded_at, financial_status, test_order_at",
       )
       .eq("id", orderId)
       .single()
@@ -157,6 +158,9 @@ export async function POST(request: Request) {
       if (!verifyGuestOrderAccessToken(guestToken, orderId)) {
         return NextResponse.json({ error: "No autorizado." }, { status: 403 })
       }
+    }
+    if (isCustomerTestOrder(order)) {
+      return NextResponse.json({ error: "No encontramos el pedido." }, { status: 404 })
     }
 
     const currentOrder = await expireTransferOrderIfNeeded(

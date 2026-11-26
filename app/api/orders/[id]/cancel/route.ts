@@ -4,6 +4,7 @@ import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 import { buildCustomerCancelledOrderNotification } from "@/lib/orders/customer-cancellation-notification"
 import { isOrderDeliveryReached, isOrderDispatchCutoffReached } from "@/lib/orders/dispatch-cutoff"
 import { isCustomerOrderOwner } from "@/lib/orders/customer-order-ownership"
+import { isCustomerTestOrder } from "@/lib/orders/order-visibility"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 
@@ -132,7 +133,7 @@ export async function POST(
   const [{ data: order, error: orderError }, packageResult] = await Promise.all([
     admin
       .from("ordenes")
-      .select("id, usuario_id, cliente_email, cliente_nombre, estado, tracking_number, andreani_tracking, andreani_envio_id, andreani_estado, andreani_handed_over_at, shipping_provider, envio_proveedor, delivered_at, invoice_status, invoice_cae, invoice_number, invoice_point, payment_status, payment_proof_url, payment_proof_uploaded_at, financial_status, credit_balance_used, paid_at, payment_confirmed_amount")
+      .select("id, usuario_id, cliente_email, cliente_nombre, estado, tracking_number, andreani_tracking, andreani_envio_id, andreani_estado, andreani_handed_over_at, shipping_provider, envio_proveedor, delivered_at, invoice_status, invoice_cae, invoice_number, invoice_point, payment_status, payment_proof_url, payment_proof_uploaded_at, financial_status, credit_balance_used, paid_at, payment_confirmed_amount, test_order_at")
       .eq("id", orderId)
       .maybeSingle(),
     admin.from("order_packages").select("id").eq("order_id", orderId).maybeSingle(),
@@ -147,6 +148,11 @@ export async function POST(
 
   if (!isCustomerOrderOwner(order, user)) {
     return NextResponse.json({ error: "No autorizado." }, { status: 403 })
+  }
+  // Compra de prueba clasificada: para el cliente no existe (tras validar
+  // titularidad, así un tercero nunca distingue una prueba de otro pedido).
+  if (isCustomerTestOrder(order)) {
+    return NextResponse.json({ error: "No encontramos el pedido." }, { status: 404 })
   }
 
   if (

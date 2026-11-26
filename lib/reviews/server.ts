@@ -151,10 +151,12 @@ export async function getEligibleReview(
   const hasRequestedOrder =
     Number.isInteger(requestedOrderId) && requestedOrderId > 0
 
+  // Compras de prueba (test_order_at): nunca reseñables.
   const ordersQuery = admin
     .from("ordenes")
     .select(ORDER_REVIEW_COLUMNS)
     .eq("usuario_id", user.id)
+    .is("test_order_at", null)
 
   const [reviewsResult, profileResult, ordersResult] = await Promise.all([
     admin
@@ -211,6 +213,7 @@ export async function getEligibleProductReview(
       .select(`${ORDER_REVIEW_COLUMNS}, orden_items(producto_id)`)
       .eq("id", orderId)
       .eq("usuario_id", user.id)
+      .is("test_order_at", null)
       .maybeSingle(),
     admin
       .from("profiles")
@@ -245,7 +248,10 @@ export async function getEligibleProductReview(
   return buildEligibleReview(order, profileResult.data as ProfileRow | null, user)
 }
 
-/** Estado del plazo de reseña de un pedido propio (null si no es del usuario). */
+/**
+ * Estado del plazo de reseña de un pedido propio. null si no es del usuario o
+ * es una compra de prueba: para el cliente esa compra no existe.
+ */
 export async function getOwnOrderReviewWindow(
   admin: AdminClient,
   userId: string,
@@ -256,6 +262,7 @@ export async function getOwnOrderReviewWindow(
     .select("estado, delivered_at")
     .eq("id", orderId)
     .eq("usuario_id", userId)
+    .is("test_order_at", null)
     .maybeSingle()
 
   if (error) throw error

@@ -106,3 +106,25 @@ test("validación del cuerpo: lista acotada, ids enteros positivos, sin duplicad
     assert.equal(parsePurchaseStatusRequests(body), null, JSON.stringify(body)?.slice(0, 60))
   }
 })
+
+test("compra de prueba clasificada: `unknown` sin ítems para el dueño y para el invitado con token válido; las reales siguen", async () => {
+  const store = deps([
+    { id: 19, usuario_id: "u1", ...PAID, test_order_at: "2026-11-25T15:52:02Z", orden_items: ITEMS },
+    { id: 23, usuario_id: null, ...PAID, test_order_at: "2026-11-25T15:00:00Z", orden_items: ITEMS },
+    { id: 18, usuario_id: "u1", ...PAID, test_order_at: null, orden_items: ITEMS },
+    { id: 24, usuario_id: null, ...PAID, orden_items: ITEMS },
+  ], "u1", { 23: "token-23", 24: "token-24" })
+  const results = await resolvePurchaseStatuses([
+    { orderId: 19, guestToken: null },
+    { orderId: 23, guestToken: "token-23" },
+    { orderId: 18, guestToken: null },
+    { orderId: 24, guestToken: "token-24" },
+  ], store)
+  const purchased = [{ productId: 7, variantId: 70, conditionedStockId: null, quantity: 2 }]
+  assert.deepEqual(results, [
+    { orderId: 19, status: "unknown" },
+    { orderId: 23, status: "unknown" },
+    { orderId: 18, status: "paid", items: purchased },
+    { orderId: 24, status: "paid", items: purchased },
+  ])
+})

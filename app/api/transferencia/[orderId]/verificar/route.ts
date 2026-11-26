@@ -22,6 +22,7 @@ import {
 import { CheckoutReservationExpiredError } from "@/lib/orders/checkout-inventory"
 import { getTransferAmountDue } from "@/lib/orders/transfer-payer-declaration"
 import { validateTransferDeclaration } from "@/lib/payments/transfer-declaration"
+import { isCustomerTestOrder } from "@/lib/orders/order-visibility"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 
@@ -110,7 +111,7 @@ export async function POST(
     const admin = createAdminClient()
     const { data: order, error: orderError } = await admin
       .from("ordenes")
-      .select("id, usuario_id, payment_method_id, payment_status")
+      .select("id, usuario_id, payment_method_id, payment_status, test_order_at")
       .eq("id", pedidoId)
       .maybeSingle()
 
@@ -127,6 +128,9 @@ export async function POST(
       if (!verifyGuestOrderAccessToken(guestToken, pedidoId)) {
         return NextResponse.json({ error: "No autorizado." }, { status: 403 })
       }
+    }
+    if (isCustomerTestOrder(order)) {
+      return NextResponse.json({ error: "No encontramos el pedido." }, { status: 404 })
     }
 
     if (order.payment_method_id !== "transferencia") {

@@ -13,7 +13,7 @@ import { isCustomerOrderVisible } from "@/lib/orders/order-visibility"
 import type { CustomerOrderSummary } from "@/lib/supabase/types"
 
 const ORDER_LIST_SELECT =
-  "id, created_at, total, estado, payment_status, payment_method_id, financial_status, admin_visible_at, paid_at, payment_confirmed_at, payment_confirmed_amount, payment_proof_uploaded_at, invoice_status, invoice_cae, refund_pending_at, refunded_at, credit_balance_used, credit_note_status, credit_note_number, credit_note_point, credit_note_cae, tracking_number, andreani_envio_id, andreani_handed_over_at, customer_hidden_at, delivered_at, payment_proof_url, shipping_provider, envio_proveedor, shipping_type, tracking_url, andreani_tracking, andreani_estado, cancellation_requested_by, orden_items(id, orden_id, producto_id, cantidad, conditioned_images, productos(nombre, imagen_principal, imagenes_producto(url)), producto_variantes(imagenes)), order_claims(id, status, failure_type, created_at, order_claim_messages(id, author_role, created_at)), order_audit_events(action, actor_type, previous_status, new_status, metadata, created_at)"
+  "id, created_at, total, estado, payment_status, payment_method_id, financial_status, admin_visible_at, paid_at, payment_confirmed_at, payment_confirmed_amount, payment_proof_uploaded_at, invoice_status, invoice_cae, refund_pending_at, refunded_at, credit_balance_used, credit_note_status, credit_note_number, credit_note_point, credit_note_cae, tracking_number, andreani_envio_id, andreani_handed_over_at, customer_hidden_at, test_order_at, delivered_at, payment_proof_url, shipping_provider, envio_proveedor, shipping_type, tracking_url, andreani_tracking, andreani_estado, cancellation_requested_by, orden_items(id, orden_id, producto_id, cantidad, conditioned_images, productos(nombre, imagen_principal, imagenes_producto(url)), producto_variantes(imagenes)), order_claims(id, status, failure_type, created_at, order_claim_messages(id, author_role, created_at)), order_audit_events(action, actor_type, previous_status, new_status, metadata, created_at)"
 
 function escapeIlikeValue(value: string) {
   return value.replace(/[\\%_]/g, (char) => `\\${char}`)
@@ -35,11 +35,14 @@ export async function GET() {
 
   const normalizedEmail = user.email?.trim().toLowerCase()
 
+  // Las compras de prueba (test_order_at) se excluyen en la consulta; además
+  // isCustomerOrderVisible las vuelve a descartar.
   const [byUserId, byEmail] = await Promise.all([
     admin
       .from("ordenes")
       .select(ORDER_LIST_SELECT)
       .eq("usuario_id", user.id)
+      .is("test_order_at", null)
       .order("created_at", { ascending: false }),
     normalizedEmail
       ? admin
@@ -47,6 +50,7 @@ export async function GET() {
           .select(ORDER_LIST_SELECT)
           .is("usuario_id", null)
           .ilike("cliente_email", escapeIlikeValue(normalizedEmail))
+          .is("test_order_at", null)
           .order("created_at", { ascending: false })
       : Promise.resolve({ data: [] as CustomerOrderSummary[], error: null }),
   ])

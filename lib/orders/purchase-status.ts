@@ -11,6 +11,8 @@ import { hasConfirmedPaymentEvidence } from "./order-payment-status.ts"
  * - el pedido tiene que ser de quien pregunta (usuario_id = sesión; pedido de
  *   invitado = token firmado vigente). Si no, `unknown`, igual que si no
  *   existiera: no se filtra nada de pedidos ajenos;
+ * - una compra de prueba clasificada (test_order_at) es `unknown`: no existe
+ *   para el cliente (la ruta además la excluye en la consulta);
  * - `paid` sólo con evidencia real de pago (hasConfirmedPaymentEvidence), y
  *   sólo entonces se devuelven los ítems comprados;
  * - cancelado/vencido/reintegrado sin pago: `void`; el resto, `pending`.
@@ -31,6 +33,7 @@ export interface PurchaseStatusOrderRow {
   payment_status: string | null
   paid_at: string | null
   payment_confirmed_amount: number | string | null
+  test_order_at?: string | null
   orden_items?: Array<{
     producto_id: number
     variante_id: number | null
@@ -91,7 +94,7 @@ export async function resolvePurchaseStatuses(
   const byId = new Map(orders.map((order) => [order.id, order]))
   return requests.map((request) => {
     const order = byId.get(request.orderId)
-    if (!order || !canAccess(order, request, deps)) return { orderId: request.orderId, status: "unknown" }
+    if (!order || order.test_order_at || !canAccess(order, request, deps)) return { orderId: request.orderId, status: "unknown" }
     const status = classifyPurchaseOrder({
       estado: order.estado,
       cancelled_at: order.cancelled_at,

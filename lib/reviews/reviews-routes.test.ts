@@ -89,16 +89,117 @@ test("E/F. Home: sólo experiencias (product_id null) aprobadas y destacadas, co
 
 // Mini PostgREST: aplica a un conjunto de filas los filtros eq/is que manda
 // la ruta, para probar el RESULTADO de Home y no sólo los parámetros.
+// Columnas de una tabla embebida (p. ej. `ordenes.test_order_at` del join
+// interno con el pedido) se leen del objeto anidado; sin pedido explícito, la
+// fila es de un pedido real (reviews.order_id es NOT NULL con FK).
+function columnValue(row: Row, column: string) {
+  if (!column.includes(".")) return row[column]
+  const [table, field] = column.split(".")
+  return ((row[table] as Row | undefined) ?? {})[field] ?? null
+}
+
 function applyPostgrestFilters(rows: Row[], url: URL) {
   return rows.filter((row) =>
     [...url.searchParams].every(([column, filter]) => {
       if (["select", "order", "limit", "offset"].includes(column)) return true
-      if (filter === "is.null") return row[column] === null
-      if (filter.startsWith("eq.")) return String(row[column]) === filter.slice(3)
+      if (filter === "is.null") return columnValue(row, column) === null
+      if (filter.startsWith("eq.")) return String(columnValue(row, column)) === filter.slice(3)
       return true
     }),
   )
 }
+
+test("compras de prueba: Home, producto y promedio filtran en la consulta (sin ocupar lugares) y no exponen el pedido", async () => {
+  const testOrder = { ordenes: { test_order_at: "2026-11-25T15:52:02Z" } }
+  const dataset: Row[] = [
+    { ...review(20, true), product_id: null, approved: true, ...testOrder, rating: 1 },
+    { ...review(21, true), product_id: null, approved: true, rating: 5 },
+    { ...review(22, false), product_id: 7, approved: true, ...testOrder, rating: 1 },
+    { ...review(23, false), product_id: 7, approved: true, rating: 4 },
+  ]
+  for (const path of ["/api/reviews", "/api/reviews?productId=7"]) {
+    await withSupabase((url) => {
+      if (url.pathname === "/rest/v1/profiles") return [PROFILE]
+      return applyPostgrestFilters(dataset, url)
+    }, async (requests) => {
+      const { GET } = await import("../../app/api/reviews/route")
+      const payload = await (await GET(new Request(`http://localhost${path}`))).json()
+      const reviewQueries = requests.filter((request) => request.url.pathname === "/rest/v1/reviews")
+      assert.ok(reviewQueries.length > 0)
+      for (const request of reviewQueries) {
+        assert.match(request.url.searchParams.get("select") ?? "", /ordenes!inner\(test_order_at\)/, `${path}: join con el pedido`)
+        assert.equal(request.url.searchParams.get("ordenes.test_order_at"), "is.null", `${path}: filtro en la consulta`)
+      }
+      if (path === "/api/reviews") {
+        assert.deepEqual(payload.reviews.map((item: { id: number }) => item.id), [21])
+        assert.deepEqual(payload.summary, { count: 1, average: 5 }, "el 1★ de la prueba no cuenta en el promedio")
+      } else {
+        assert.deepEqual(payload.reviews.map((item: { id: number }) => item.id), [23])
+      }
+      assert.equal(JSON.stringify(payload).includes("test_order_at"), false)
+      assert.equal(JSON.stringify(payload).includes("ordenes"), false)
+    })
+  }
+})
+
+test("compras de prueba: no son reseñables y sus reseñas propias no se muestran en la compra", async () => {
+  const recent = new Date(Date.now() - 3 * DAY).toISOString()
+  const testOrder = { id: 19, localidad: "Rosario", provincia: "Santa Fe", estado: "entregado", payment_status: "approved", delivered_at: recent, created_at: recent, test_order_at: "2026-11-25T15:52:02Z" }
+  await withSupabase((url) => {
+    if (url.pathname === "/rest/v1/profiles") return { nombre: "LUCAS", username: "Lucas", direccion: "", codigo_postal: "2000", provincia: "Santa Fe" }
+    if (url.pathname === "/rest/v1/ordenes") return applyPostgrestFilters([testOrder], url)
+    if (url.pathname === "/rest/v1/reviews") {
+      // Reseñas propias ya existentes de la compra de prueba.
+      if (url.searchParams.get("order_id") === "eq.19") {
+        return url.searchParams.get("product_id") === "is.null"
+          ? { id: 70, order_id: 19, rating: 5, comment: "Prueba interna", created_at: recent }
+          : [{ product_id: 22, rating: 5, comment: "Prueba interna" }]
+      }
+      return []
+    }
+    throw new Error(`consulta inesperada ${url.pathname}`)
+  }, async (requests) => {
+    const { GET, POST } = await import("../../app/api/reviews/route")
+    for (const body of [{ orderId: 19, rating: 5, comment: "Excelente producto" }, { orderId: 19, productId: 22, rating: 5, comment: "Excelente producto" }]) {
+      const response = await POST(post(body))
+      assert.equal(response.status, 403, JSON.stringify(body))
+    }
+    assert.ok(!requests.some((request) => request.method === "POST"), "sin insert")
+    const orderQueries = requests.filter((request) => request.url.pathname === "/rest/v1/ordenes")
+    assert.ok(orderQueries.length > 0 && orderQueries.every((request) => request.url.searchParams.get("test_order_at") === "is.null"))
+
+    const payload = await (await GET(new Request("http://localhost/api/reviews?orderId=19", { headers: { Authorization: "Bearer client" } }))).json()
+    assert.equal(payload.eligibleReview, null, "sin 'pendiente de reseñar'")
+    assert.deepEqual(payload.ownProductReviews, [])
+    assert.equal(payload.ownExperienceReview, null)
+    assert.equal(payload.reviewWindow, null)
+  })
+})
+
+test("compras de prueba: si la base rechaza la reseña (REVIEW_TEST_ORDER), la API responde 403 sin error técnico", async () => {
+  const recent = new Date(Date.now() - 3 * DAY).toISOString()
+  const handler = eligibilityHandler(recent)
+  const previous = globalThis.fetch
+  await withSupabase((url) => handler(url), async () => {
+    const mocked = globalThis.fetch
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(String(input))
+      if (url.pathname === "/rest/v1/reviews" && init?.method === "POST") {
+        return Response.json({ code: "P0001", message: "REVIEW_TEST_ORDER", details: null, hint: null }, { status: 400 })
+      }
+      return mocked(input, init)
+    }) as typeof fetch
+    try {
+      const { POST } = await import("../../app/api/reviews/route")
+      const response = await POST(post({ orderId: 1, rating: 5, comment: "Excelente producto" }))
+      assert.equal(response.status, 403)
+      assert.equal((await response.json()).error, "No encontramos una compra verificada disponible para reseñar.")
+    } finally {
+      globalThis.fetch = mocked
+    }
+  })
+  assert.equal(globalThis.fetch, previous)
+})
 
 test("Home: aparece la experiencia aprobada + destacada; ni la no destacada, ni la pendiente, ni una reseña de producto", async () => {
   const dataset: Row[] = [
@@ -320,5 +421,70 @@ test("F. si la base rechaza (REVIEW_FEATURED_EXPERIENCE_ONLY), la API responde 4
     } finally {
       globalThis.fetch = fetchMock
     }
+  })
+})
+
+test("FAIL-CLOSED: si no se puede verificar la compra, error controlado y ninguna reseña asociada (500, error de consulta y red)", async () => {
+  const recent = new Date(Date.now() - 3 * DAY).toISOString()
+  const ownReviews = (url: URL) => url.searchParams.get("product_id") === "is.null"
+    ? { id: 70, order_id: 1, rating: 5, comment: "Reseña histórica", created_at: recent }
+    : [{ product_id: 22, rating: 5, comment: "Reseña histórica" }]
+  const failures: Array<[string, () => Response]> = [
+    ["HTTP 500", () => new Response("upstream error", { status: 500 })],
+    ["error de consulta", () => Response.json({ code: "42703", message: "column does not exist", details: null, hint: null }, { status: 400 })],
+    ["red", () => { throw new TypeError("fetch failed") }],
+  ]
+  for (const [label, failure] of failures) {
+    await withSupabase((url) => {
+      if (url.pathname === "/rest/v1/reviews") return url.searchParams.get("order_id") === "eq.1" ? ownReviews(url) : []
+      if (url.pathname === "/rest/v1/profiles") return { rol: "cliente", nombre: "LUCAS", username: "Lucas", direccion: "", codigo_postal: "2000", provincia: "Santa Fe" }
+      return []
+    }, async (requests) => {
+      const mocked = globalThis.fetch
+      globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+        const url = new URL(String(input))
+        // Sólo falla la verificación de la compra (consulta a ordenes por id).
+        if (url.pathname === "/rest/v1/ordenes" && url.searchParams.get("id") === "eq.1") return failure()
+        return mocked(input, init)
+      }) as typeof fetch
+      try {
+        const errors = mock.method(console, "error", () => {})
+        const { GET } = await import("../../app/api/reviews/route")
+        const response = await GET(new Request("http://localhost/api/reviews?orderId=1", { headers: { Authorization: "Bearer client" } }))
+        errors.mock.restore()
+        assert.equal(response.status, 503, label)
+        const raw = await response.text()
+        assert.deepEqual(JSON.parse(raw), { error: "No pudimos cargar las reseñas de esta compra." }, label)
+        assert.equal(raw.includes("Reseña histórica"), false, `${label}: no revela reseñas`)
+        assert.equal(/column|upstream|fetch failed/.test(raw), false, `${label}: sin error técnico`)
+        assert.ok(!requests.some((request) => request.url.pathname === "/rest/v1/reviews" && request.url.searchParams.get("order_id") === "eq.1"),
+          `${label}: ni siquiera se consultan las reseñas de esa compra`)
+      } finally {
+        globalThis.fetch = mocked
+      }
+    })
+  }
+})
+
+test("compra legítima verificada: devuelve sus reseñas propias y el plazo como siempre", async () => {
+  const recent = new Date(Date.now() - 3 * DAY).toISOString()
+  await withSupabase((url) => {
+    if (url.pathname === "/rest/v1/ordenes") return applyPostgrestFilters([{ id: 1, estado: "entregado", delivered_at: recent, usuario_id: "client-1", localidad: "Rosario", provincia: "Santa Fe", payment_status: "approved", created_at: recent, test_order_at: null }], url)
+    if (url.pathname === "/rest/v1/reviews") {
+      if (url.searchParams.get("order_id") !== "eq.1") return []
+      return url.searchParams.get("product_id") === "is.null"
+        ? { id: 70, order_id: 1, rating: 5, comment: "Llegó perfecto", created_at: recent }
+        : [{ product_id: 22, rating: 4, comment: "Muy bueno" }]
+    }
+    if (url.pathname === "/rest/v1/profiles") return { rol: "cliente", nombre: "LUCAS", username: "Lucas", direccion: "", codigo_postal: "2000", provincia: "Santa Fe" }
+    return []
+  }, async () => {
+    const { GET } = await import("../../app/api/reviews/route")
+    const response = await GET(new Request("http://localhost/api/reviews?orderId=1", { headers: { Authorization: "Bearer client" } }))
+    assert.equal(response.status, 200)
+    const payload = await response.json()
+    assert.deepEqual(payload.ownProductReviews, [{ product_id: 22, rating: 4, comment: "Muy bueno" }])
+    assert.equal(payload.ownExperienceReview.comment, "Llegó perfecto")
+    assert.equal(payload.reviewWindow.status, "open")
   })
 })
