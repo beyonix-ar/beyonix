@@ -39,7 +39,7 @@ export type LocalDeliveryAdminClient = ReturnType<typeof createAdminClient>
 export type LocalDeliveryActor = { type: "admin"; id: string } | { type: "courier"; token: string } | { type: "system" }
 
 export const LOCAL_DELIVERY_ORDER_COLUMNS =
-  "id,estado,shipping_provider,envio_proveedor,delivered_at,cancelled_at,financial_status,order_change_status,paid_at,payment_status,payment_confirmed_amount,shipping_cost_real,cliente_email,cliente_nombre"
+  "id,estado,shipping_provider,envio_proveedor,delivered_at,cancelled_at,financial_status,order_change_status,paid_at,payment_status,payment_confirmed_amount,shipping_cost_real,cliente_email,cliente_nombre,test_order_at"
 // Filas de efectos en order_audit_events (metadata.localDeliveryEffect +
 // metadata.localDeliveryEffectState). Append-only: nunca se borran.
 const EMAIL_ACTION_BY_STATE: Record<LocalDeliveryEffectState, string> = {
@@ -77,6 +77,8 @@ export function whereLocalDeliveryEligible<Q extends EligibilityFilterable<Q>>(q
     .not("paid_at", "is", null)
     .gt("payment_confirmed_amount", 0)
     .in("payment_status", CONFIRMED_PAYMENT_STATUSES)
+    // Compra de prueba clasificada: nunca elegible (listas, cron, transiciones y autorización de avisos).
+    .is("test_order_at", null)
 }
 
 export const NO_LOCAL_DELIVERY_PREPARATION: LocalDeliveryPreparation = { packageStatus: null, parcelCount: null, confirmedParcels: 0 }
@@ -256,6 +258,11 @@ export function localDeliveryServiceDeps(admin: LocalDeliveryAdminClient, actor:
       const { data, error } = await admin.from("orden_items").select(WARRANTY_COLUMNS).eq("orden_id", orderId)
       if (error) throw new Error("WARRANTY_READ_FAILED")
       return (data ?? []) as LocalDeliveryWarrantyItem[]
+    },
+    async isTestOrder(orderId) {
+      const { data, error } = await admin.from("ordenes").select("test_order_at").eq("id", orderId).maybeSingle()
+      if (error) throw new Error("TEST_ORDER_READ_FAILED")
+      return Boolean((data as { test_order_at: string | null } | null)?.test_order_at)
     },
     async authorizeEmail(orderId, expectedEstado) {
       const query = admin.from("ordenes").select("id").eq("id", orderId).eq("estado", expectedEstado)

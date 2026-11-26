@@ -29,6 +29,8 @@ export async function GET(request: Request) {
   }
   const admin = createAdminClient()
   const since = new Date(Date.now() - RECOVERY_WINDOW_DAYS * 86_400_000).toISOString()
+  // Las compras de prueba quedan afuera ya en la selección (whereLocalDeliveryEligible);
+  // el servicio vuelve a leer la clasificación antes de cada efecto.
   const query = admin.from("ordenes").select("id,estado,delivered_at")
   const candidates = await whereLocalDeliveryEligible<typeof query>(query)
     .in("estado", ["en_camino", "entregado"])

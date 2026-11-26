@@ -23,10 +23,11 @@ export async function GET(request: Request) {
   const fail = (message: string) => Response.json({ error: message }, { status: 500 })
 
   // Todos los pedidos pagos pendientes de despacho, sin importar la fecha:
-  // la cola completa se recorre por páginas (sin tope artificial).
+  // la cola completa se recorre por páginas (sin tope artificial). Las compras
+  // de prueba (test_order_at) nunca son trabajo de Despachos.
   const activeOrders: DispatchOrder[] = []
   if (!alertsOnly) for (let offset = 0; ; offset += PAGE) {
-    const page = await auth.admin.from("ordenes").select(ORDER_COLUMNS).eq("financial_status", "payment_confirmed").is("cancelled_at", null).is("andreani_handed_over_at", null)
+    const page = await auth.admin.from("ordenes").select(ORDER_COLUMNS).eq("financial_status", "payment_confirmed").is("cancelled_at", null).is("andreani_handed_over_at", null).is("test_order_at", null)
       .not("estado", "in", `(${OUT_OF_DISPATCH.join(",")})`).order("id", { ascending: false }).range(offset, offset + PAGE - 1)
     if (page.error) return fail("No se pudieron cargar los despachos.")
     activeOrders.push(...((page.data ?? []) as DispatchOrder[]))

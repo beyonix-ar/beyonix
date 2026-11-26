@@ -1,5 +1,5 @@
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
-import { validId } from "@/lib/admin/dispatch"
+import { DISPATCH_TEST_ORDER_ERROR, validId } from "@/lib/admin/dispatch"
 import { buildLocalDeliveryLabels, LocalDeliveryLabelError, type LocalDeliveryLabelOrder } from "@/lib/shipping/local-delivery-label"
 import { isLocalDeliveryOrder } from "@/lib/shipping/local-delivery"
 import { createLocalDeliveryAccessToken, localDeliveryCourierUrl } from "@/lib/shipping/local-delivery-outcome"
@@ -7,7 +7,7 @@ import { resolveTrustedSiteUrl } from "@/lib/site-url"
 
 type Context = { params: Promise<{ id: string }> }
 
-const ORDER_COLUMNS = "id,estado,cancelled_at,financial_status,shipping_provider,envio_proveedor,cliente_nombre,cliente_direccion,localidad,provincia,cp_destino,cliente_telefono"
+const ORDER_COLUMNS = "id,estado,cancelled_at,financial_status,shipping_provider,envio_proveedor,cliente_nombre,cliente_direccion,localidad,provincia,cp_destino,cliente_telefono,test_order_at"
 const CANCELLED_FINANCIAL = ["cancellation_requested", "refund_pending", "refunded", "cancelled"]
 const DISPATCHED_ESTADOS = ["en_camino", "entregado"]
 const CANCELLED_MESSAGE = "Pedido cancelado — no se generan etiquetas de entrega."
@@ -19,6 +19,7 @@ type OrderRow = LocalDeliveryLabelOrder & {
   financial_status: string | null
   shipping_provider: string | null
   envio_proveedor: string | null
+  test_order_at: string | null
 }
 
 /**
@@ -37,6 +38,8 @@ export async function POST(request: Request, context: Context) {
   if (error) return Response.json({ error: "No se pudo cargar el pedido." }, { status: 500 })
   const order = data as OrderRow | null
   if (!order) return Response.json({ error: "Pedido no encontrado." }, { status: 404 })
+  // Compra de prueba: generar o reimprimir etiquetas (y su QR) es una operación nueva; nadie la ejecuta.
+  if (order.test_order_at) return Response.json({ error: DISPATCH_TEST_ORDER_ERROR }, { status: 409 })
   if (!isLocalDeliveryOrder(order)) return Response.json({ error: NOT_LOCAL_MESSAGE }, { status: 409 })
   if (order.estado === "cancelado" || order.cancelled_at || CANCELLED_FINANCIAL.includes(order.financial_status ?? "")) {
     return Response.json({ error: CANCELLED_MESSAGE }, { status: 409 })
@@ -69,6 +72,8 @@ export async function POST(request: Request, context: Context) {
   })
   if (ensured.error || typeof ensured.data !== "string") {
     const message = ensured.error?.message ?? ""
+    // Clasificada como prueba mientras se generaba: la base lo rechaza bajo lock.
+    if (message.includes("DISPATCH_TEST_ORDER")) return Response.json({ error: DISPATCH_TEST_ORDER_ERROR }, { status: 409 })
     if (message.includes("LOCAL_DELIVERY_LABEL_ORDER_CANCELLED")) return Response.json({ error: CANCELLED_MESSAGE }, { status: 409 })
     if (message.includes("DISPATCH_LOCAL_DELIVERY_ONLY")) return Response.json({ error: NOT_LOCAL_MESSAGE }, { status: 409 })
     return Response.json({ error: "No se pudo generar el QR de entrega. Reintentá." }, { status: 500 })
@@ -96,6 +101,8 @@ export async function POST(request: Request, context: Context) {
     if (message.includes("DISPATCH_PARCEL_STALE")) {
       return Response.json({ error: "La preparación del pedido cambió (rearmado o bultos nuevos). Actualizá el pedido y volvé a generar las etiquetas." }, { status: 409 })
     }
+    // Clasificada como prueba mientras se generaba: la base lo rechaza bajo lock.
+    if (message.includes("DISPATCH_TEST_ORDER")) return Response.json({ error: DISPATCH_TEST_ORDER_ERROR }, { status: 409 })
     if (message.includes("LOCAL_DELIVERY_LABEL_ORDER_CANCELLED")) return Response.json({ error: CANCELLED_MESSAGE }, { status: 409 })
     if (message.includes("DISPATCH_LOCAL_DELIVERY_ONLY")) return Response.json({ error: NOT_LOCAL_MESSAGE }, { status: 409 })
     return Response.json({ error: "No se pudo registrar la generación de las etiquetas. Reintentá." }, { status: 500 })

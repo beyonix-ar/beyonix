@@ -1,12 +1,12 @@
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
-import { orderCode, validId } from "@/lib/admin/dispatch"
+import { DISPATCH_TEST_ORDER_CONSULT_ERROR, orderCode, validId } from "@/lib/admin/dispatch"
 import { isLocalDeliveryOrder } from "@/lib/shipping/local-delivery"
 import { getCourierScreen, isLocalDeliveryAccessToken, isLocalDeliveryOutcomeStatus, localDeliveryCourierUrl } from "@/lib/shipping/local-delivery-outcome"
 import { resolveTrustedSiteUrl } from "@/lib/site-url"
 
 type Context = { params: Promise<{ id: string }> }
 
-const ORDER_COLUMNS = "id,estado,cancelled_at,financial_status,shipping_provider,envio_proveedor"
+const ORDER_COLUMNS = "id,estado,cancelled_at,financial_status,shipping_provider,envio_proveedor,test_order_at"
 const CANCELLED_FINANCIAL = ["cancellation_requested", "refund_pending", "refunded", "cancelled"]
 const NO_STORE = { "Cache-Control": "private, no-store" }
 
@@ -28,8 +28,10 @@ export async function POST(request: Request, context: Context) {
       .eq("order_id", id).order("shipment_number", { ascending: false }).limit(1).maybeSingle(),
   ])
   if (orderResult.error || shipmentResult.error) return Response.json({ error: "No se pudo cargar el QR del pedido." }, { status: 500, headers: NO_STORE })
-  const order = orderResult.data as { id: number; estado: string | null; cancelled_at: string | null; financial_status: string | null; shipping_provider: string | null; envio_proveedor: string | null } | null
+  const order = orderResult.data as { id: number; estado: string | null; cancelled_at: string | null; financial_status: string | null; shipping_provider: string | null; envio_proveedor: string | null; test_order_at: string | null } | null
   if (!order) return Response.json({ error: "Pedido no encontrado." }, { status: 404, headers: NO_STORE })
+  // Compra de prueba: consulta histórica sólo para Super Admin (el cadete no puede operar un pedido entregado).
+  if (order.test_order_at && auth.profile.rol !== "super_admin") return Response.json({ error: DISPATCH_TEST_ORDER_CONSULT_ERROR }, { status: 409, headers: NO_STORE })
   if (!isLocalDeliveryOrder(order)) return Response.json({ error: "Este pedido no usa Envío BEYONIX: no tiene QR de cadete." }, { status: 409, headers: NO_STORE })
   const cancelled = order.estado === "cancelado" || Boolean(order.cancelled_at) || CANCELLED_FINANCIAL.includes(order.financial_status ?? "")
   if (cancelled) return Response.json({ error: "Pedido cancelado: su QR de entrega ya no se usa." }, { status: 409, headers: NO_STORE })

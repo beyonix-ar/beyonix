@@ -4,7 +4,7 @@ import { requireOperator } from "@/app/api/admin/clientes/_auth"
 import { AndreaniError, normalizeAndreaniError } from "@/lib/andreani/client"
 import { createDispatchAndreaniShipment } from "@/lib/andreani/dispatch-shipment"
 import { quoteOrderParcels } from "@/lib/andreani/parcel-quote"
-import { DISPATCH_ADJUSTMENT_PROBLEMS, DISPATCH_ADJUSTMENT_SETTLEMENTS, DISPATCH_ORDER_ACTIONS, dispatchActionProviderError, dispatchError, getOrderDispatch, isRequestKey, validId, type DispatchLabelConfirmation, type DispatchOrderAction, type DispatchScanResult, type LocalParcelConfirmation } from "@/lib/admin/dispatch"
+import { DISPATCH_ADJUSTMENT_PROBLEMS, DISPATCH_ADJUSTMENT_SETTLEMENTS, DISPATCH_ORDER_ACTIONS, DISPATCH_TEST_ORDER_ERROR, dispatchActionProviderError, dispatchError, getOrderDispatch, isRequestKey, validId, type DispatchLabelConfirmation, type DispatchOrderAction, type DispatchScanResult, type LocalParcelConfirmation } from "@/lib/admin/dispatch"
 import { isLocalDeliveryOrder } from "@/lib/shipping/local-delivery"
 import { loadLocalDeliveryRevertable } from "@/lib/orders/local-delivery-outcomes-server"
 import { parseParcelMeasures, ParcelMeasuresError } from "@/lib/shipping/parcel-measures"
@@ -55,8 +55,9 @@ export async function POST(request: Request, context: Context) {
   const body = await request.json().catch(() => null) as Body | null
   if (!body || !(DISPATCH_ORDER_ACTIONS as readonly string[]).includes(body.action ?? "")) return Response.json({ error: "Acción inválida." }, { status: 400 })
   const { data: order, error: orderError } = await auth.admin.from("ordenes")
-    .select("estado,cancelled_at,financial_status,andreani_envio_id,shipping_provider,envio_proveedor").eq("id", id).maybeSingle()
+    .select("estado,cancelled_at,financial_status,andreani_envio_id,shipping_provider,envio_proveedor,test_order_at").eq("id", id).maybeSingle()
   if (orderError || !order) return Response.json({ error: "No se pudo verificar el pedido." }, { status: 500 })
+  if (order.test_order_at) return Response.json({ error: DISPATCH_TEST_ORDER_ERROR }, { status: 409 })
   if (order.estado === "cancelado" || order.cancelled_at || ["cancellation_requested", "refund_pending", "refunded"].includes(order.financial_status ?? "")) {
     return Response.json({ error: "Pedido cancelado — no requiere preparación." }, { status: 409 })
   }

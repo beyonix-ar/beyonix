@@ -252,6 +252,8 @@ export interface LocalDeliveryServiceDeps {
    * En camino quedó obsoleto. Lanza si no se pudo leer.
    */
   loadOutcomeStatus?(orderId: number): Promise<LocalDeliveryOutcomeStatus | null>
+  /** Clasificación como compra de prueba leída en el momento (no la del pedido cargado). Lanza si no se pudo leer. */
+  isTestOrder(orderId: number): Promise<boolean>
   now(): string
 }
 
@@ -438,6 +440,14 @@ export async function runLocalDeliveryEffects(
     return effects
   }
 
+  // Compra de prueba: se relee la clasificación inmediatamente antes de cada
+  // escritura o envío (no la del pedido cargado al empezar). Confirmada entre
+  // la selección y la ejecución, detiene todo lo que falta: queda pendiente y
+  // nada se borra. Si no se puede leer, tampoco se ejecuta.
+  const classifiedAsTest = () => deps.isTestOrder(order.id).catch(() => true)
+  const notDone = (from: number) => effects.slice(from).filter((effect) => !isDone(statuses.get(effect)))
+  if (await classifiedAsTest()) return notDone(0)
+
   // Entregado vuelve obsoleto el aviso de En camino que no llegó a salir:
   // se marca `superseded` y nunca se envía después.
   if (stage === "delivered" && !isDone(statuses.get("in_transit_email")) && statuses.get("in_transit_email") !== "in_progress") {
@@ -445,8 +455,12 @@ export async function runLocalDeliveryEffects(
   }
 
   const pending: LocalDeliveryEffect[] = []
-  for (const effect of effects) {
+  for (const [index, effect] of effects.entries()) {
     const status = statuses.get(effect)
+    if (!isDone(status) && await classifiedAsTest()) {
+      pending.push(...notDone(index))
+      break
+    }
     if (skip?.has(effect) && !isDone(status)) {
       pending.push(effect)
       continue

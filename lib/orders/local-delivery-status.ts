@@ -35,6 +35,8 @@ export interface LocalDeliveryOrderState {
   paid_at?: string | null
   payment_status?: string | null
   payment_confirmed_amount?: number | null
+  /** Compra de prueba clasificada: fuera del circuito (sin transiciones ni avisos). */
+  test_order_at?: string | null
 }
 
 export function isLocalDeliveryAction(value: unknown): value is LocalDeliveryAction {
@@ -67,6 +69,7 @@ export function getLocalDeliveryActionSourceEstados(action: LocalDeliveryAction)
  */
 function getLocalDeliveryEligibilityError(order: LocalDeliveryOrderState, cancelledMessage: string) {
   if (!isLocalDeliveryOrder(order)) return "Este pedido no usa Envío BEYONIX."
+  if (order.test_order_at) return "Compra de prueba: no se operan entregas ni avisos."
   if (order.estado === "cancelado" || order.cancelled_at || BLOCKING_FINANCIAL_STATUSES.includes(order.financial_status ?? "")) {
     return cancelledMessage
   }

@@ -41,6 +41,10 @@ export type LocalParcelConfirmation = { orderId: number; code: string; parcelInd
 /** Acciones del pedido en Despachos (app/api/admin/dispatch/orders/[id]). */
 export const DISPATCH_ORDER_ACTIONS = ["start", "scan", "reset", "adjust", "ship", "confirm_label", "local_parcels", "confirm_parcel"] as const
 export type DispatchOrderAction = typeof DISPATCH_ORDER_ACTIONS[number]
+/** Compra de prueba clasificada (ordenes.test_order_at): fuera de Despachos, ninguna acción la opera. */
+export const DISPATCH_TEST_ORDER_ERROR = "Compra de prueba: no se opera desde Despachos."
+/** Consultas históricas (etiqueta Andreani, QR del cadete) de una compra de prueba: sólo Super Admin. */
+export const DISPATCH_TEST_ORDER_CONSULT_ERROR = "Compra de prueba: sólo un Super Admin puede consultar su historial logístico."
 const ANDREANI_ONLY_ACTIONS: readonly DispatchOrderAction[] = ["ship", "confirm_label"]
 const LOCAL_DELIVERY_ONLY_ACTIONS: readonly DispatchOrderAction[] = ["local_parcels", "confirm_parcel"]
 

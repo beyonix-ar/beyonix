@@ -14,7 +14,7 @@ import {
   whereLocalDeliveryEligible,
 } from "@/lib/orders/local-delivery-deps"
 import { loadAdminLocalDeliveryOutcomes, loadLocalDeliveryRevertable } from "@/lib/orders/local-delivery-outcomes-server"
-import { isRequestKey } from "@/lib/admin/dispatch"
+import { DISPATCH_TEST_ORDER_ERROR, isRequestKey } from "@/lib/admin/dispatch"
 import {
   isInTransitEmailObsolete,
   LOCAL_DELIVERY_REVERT_REASON_MAX,
@@ -57,6 +57,8 @@ export async function GET(request: Request) {
   if ("error" in auth) return auth.error
 
   const deliveredSince = new Date(Date.now() - RECENTLY_DELIVERED_DAYS * 86_400_000).toISOString()
+  // Compras de prueba (test_order_at): fuera de las listas (colas y entregados
+  // recientes). Las colas las excluyen en la base y whereLocalDeliveryEligible, al leer.
   const base = () => {
     const query = auth.admin.from("ordenes").select(LIST_COLUMNS)
     return whereLocalDeliveryEligible<typeof query>(query)
@@ -188,6 +190,11 @@ export async function POST(request: Request) {
   }
 
   try {
+    // Compra de prueba: ninguna acción de Despachos (avance, corrección,
+    // incidencia ni reintento de efectos) la opera.
+    const testOrder = await auth.admin.from("ordenes").select("test_order_at").eq("id", orderId).maybeSingle()
+    if (testOrder.error) return Response.json({ error: "No se pudo verificar el pedido." }, { status: 500 })
+    if (testOrder.data?.test_order_at) return Response.json({ error: DISPATCH_TEST_ORDER_ERROR }, { status: 409 })
     if (action === "revert_in_transit") return await revertHandover(auth, orderId, body ?? {})
     if (isIncidentAction(action)) {
       const { error } = await auth.admin.rpc("resolve_local_delivery_incident", {

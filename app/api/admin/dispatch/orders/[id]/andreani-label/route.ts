@@ -3,7 +3,7 @@ import { NextResponse } from "next/server"
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
 import { AndreaniError, normalizeAndreaniError } from "@/lib/andreani/client"
 import { fetchAndreaniOrderLabel } from "@/lib/andreani/dispatch-shipment"
-import { validId } from "@/lib/admin/dispatch"
+import { DISPATCH_TEST_ORDER_CONSULT_ERROR, validId } from "@/lib/admin/dispatch"
 
 type Context = { params: Promise<{ id: string }> }
 
@@ -19,6 +19,12 @@ export async function POST(request: Request, context: Context) {
   if ("error" in auth) return auth.error
   const body = await request.json().catch(() => null) as { formato?: unknown } | null
   const formato = body?.formato === "zpl" ? "zpl" : "pdf"
+  // Compra de prueba: la etiqueta existente es historial; sólo Super Admin la consulta.
+  const testOrder = await auth.admin.from("ordenes").select("test_order_at").eq("id", id).maybeSingle()
+  if (testOrder.error) return Response.json({ error: "No se pudo verificar el pedido." }, { status: 500 })
+  if (testOrder.data?.test_order_at && auth.profile.rol !== "super_admin") {
+    return Response.json({ error: DISPATCH_TEST_ORDER_CONSULT_ERROR }, { status: 409 })
+  }
 
   let label: Awaited<ReturnType<typeof fetchAndreaniOrderLabel>>
   try {

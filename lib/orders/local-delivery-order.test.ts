@@ -302,12 +302,13 @@ function localDeliveryStore(initial: Partial<LocalDeliveryOrderRecord> = {}) {
     state: {} as Partial<Record<LocalDeliveryEffectState, number>>,
   }
   /** Hooks para simular otro proceso entre pasos. */
-  const hooks: { onReserve?: (attemptId: string) => void; beforeTransition?: () => void } = {}
+  const hooks: { onReserve?: (attemptId: string) => void; beforeTransition?: () => void; onTestOrderRead?: () => void; beforeRecordEffect?: () => void } = {}
   let authorizations = 0
   /** Pickeo y bultos del pedido (por defecto, listo para el cadete). */
   const preparation: LocalDeliveryPreparation = { packageStatus: "prepared", parcelCount: 1, confirmedParcels: 1 }
   // Mismo WHERE que whereLocalDeliveryEligible en la ruta.
-  const eligibleInDb = () => order.shipping_provider === "beyonix" && !order.cancelled_at && hasConfirmedPaymentEvidence(order)
+  const eligibleInDb = () => order.shipping_provider === "beyonix" && !order.cancelled_at && !order.test_order_at && hasConfirmedPaymentEvidence(order)
+  let testOrderReads = 0
   let clock = Date.parse("2026-11-03T15:00:00.000Z")
   const now = () => new Date(clock).toISOString()
   const deps: LocalDeliveryServiceDeps = {
@@ -330,12 +331,21 @@ function localDeliveryStore(initial: Partial<LocalDeliveryOrderRecord> = {}) {
     },
     async recordEffect(_orderId, effect, state, metadata) {
       await Promise.resolve()
+      hooks.beforeRecordEffect?.()
+      // Mismo guard que la base (guard_test_order_local_delivery_effect, bajo lock del pedido).
+      if (order.test_order_at) throw new Error("LOCAL_DELIVERY_EFFECT_TEST_ORDER")
       if (failures.status > 0 && effect.endsWith("_status")) { failures.status -= 1; throw new Error("audit down") }
       if ((failures.state[state] ?? 0) > 0) { failures.state[state]! -= 1; throw new Error(`${state} down`) }
       rows.push({ effect, state, metadata, createdAt: now() })
       if (state === "reserved" && typeof metadata.attemptId === "string") hooks.onReserve?.(metadata.attemptId)
     },
     async loadPreparation() { return { ...preparation } },
+    async isTestOrder() {
+      await Promise.resolve()
+      testOrderReads += 1
+      hooks.onTestOrderRead?.()
+      return Boolean(order.test_order_at)
+    },
     async authorizeEmail(_orderId, expectedEstado) {
       await Promise.resolve()
       const ok = order.estado === expectedEstado && eligibleInDb()
@@ -372,7 +382,7 @@ function localDeliveryStore(initial: Partial<LocalDeliveryOrderRecord> = {}) {
   const completed = () => rows.filter((row) => row.state === "completed").map((row) => row.effect).sort()
   const rowsOf = (effect: LocalDeliveryEffect) => rows.filter((row) => row.effect === effect).map((row) => row.state)
   const advanceClock = (ms: number) => { clock += ms }
-  return { order, deps, rows, warranties, emails, failures, completed, rowsOf, advanceClock, hooks, preparation, authorizations: () => authorizations }
+  return { order, deps, rows, warranties, emails, failures, completed, rowsOf, advanceClock, hooks, preparation, authorizations: () => authorizations, testOrderReads: () => testOrderReads }
 }
 
 test("avance completo: cada efecto una sola vez (historial, garantía, email) y el costo del cadete en la auditoría de la entrega", async () => {
@@ -530,6 +540,113 @@ test("automático: pedido cancelado o reintegrado después de entregar => no eje
   assert.equal(recovered.status, 409)
   assert.equal(store.rows.length, rowsBefore)
   assert.deepEqual(store.emails, [])
+})
+
+// ── Compras de prueba (test_order_at): ningún efecto ni email nuevo ─────────
+
+const TEST_AT = "2026-11-24T13:00:00.000Z"
+/** Entregado con historial, garantía y email pendientes (auditoría, garantía y proveedor caídos). */
+async function deliveredWithAllEffectsPending() {
+  const store = localDeliveryStore({ estado: "en_camino" })
+  store.failures.status = 1
+  store.failures.warrantyItems = 2
+  store.failures.email = 1
+  const delivered = await advanceLocalDelivery(store.deps, 7, "entregado")
+  assert.deepEqual([...delivered.body.pendingEffects!].sort(), ["delivered_email", "delivered_status", "delivered_warranty"])
+  store.emails.length = 0
+  return store
+}
+
+test("compra de prueba con efectos pendientes: el cron y el reintento manual no ejecutan nada (ni reservan email), en cada corrida", async () => {
+  const store = await deliveredWithAllEffectsPending()
+  store.order.test_order_at = TEST_AT
+  const rowsBefore = store.rows.length
+  const activationsBefore = store.warranties.map((item) => item.activations)
+  const authorizationsBefore = store.authorizations()
+  for (let run = 0; run < 3; run += 1) {
+    const recovered = await recoverLocalDeliveryEffects(store.deps, 7)
+    assert.equal(recovered.status, 409)
+    assert.match(recovered.body.error ?? "", /Compra de prueba/)
+  }
+  assert.equal((await retryLocalDeliveryEffects(store.deps, 7)).status, 409)
+  assert.equal(store.rows.length, rowsBefore, "ni marcas ni reservas nuevas")
+  assert.deepEqual(store.emails, [])
+  assert.deepEqual(store.warranties.map((item) => item.activations), activationsBefore, "ninguna garantía nueva")
+  assert.equal(store.authorizations(), authorizationsBefore, "ninguna autorización de email nueva")
+})
+
+test("pedido real con los mismos efectos pendientes: el cron los completa una sola vez (sin cambios)", async () => {
+  const store = await deliveredWithAllEffectsPending()
+  assert.deepEqual((await recoverLocalDeliveryEffects(store.deps, 7)).body.pendingEffects, [])
+  await recoverLocalDeliveryEffects(store.deps, 7)
+  assert.deepEqual(store.emails, ["entregado"])
+  assert.deepEqual(store.rowsOf("delivered_status").filter((state) => state === "completed"), ["completed"])
+  assert.deepEqual(store.rowsOf("delivered_warranty"), ["completed"])
+  assert.ok(store.testOrderReads() > 0, "la clasificación se relee también para pedidos reales")
+})
+
+test("clasificada entre la selección y la ejecución: se detiene antes del primer efecto", async () => {
+  const store = await deliveredWithAllEffectsPending()
+  const rowsBefore = store.rows.length
+  // El cron ya cargó el pedido (todavía no era prueba); la clasificación se confirma justo antes de ejecutar.
+  store.hooks.onTestOrderRead = () => { store.order.test_order_at = TEST_AT }
+  const recovered = await recoverLocalDeliveryEffects(store.deps, 7)
+  assert.equal(recovered.status, 200)
+  assert.deepEqual([...recovered.body.pendingEffects!].sort(), ["delivered_email", "delivered_status", "delivered_warranty"])
+  assert.equal(store.rows.length, rowsBefore)
+  assert.deepEqual(store.emails, [])
+})
+
+test("clasificada en medio de la corrida: lo ya hecho queda (historial), lo que falta no se ejecuta", async () => {
+  const store = await deliveredWithAllEffectsPending()
+  let reads = 0
+  // 1ª lectura (antes de empezar) y 2ª (antes del primer efecto): todavía real. Se clasifica antes del segundo efecto.
+  store.hooks.onTestOrderRead = () => { reads += 1; if (reads === 3) store.order.test_order_at = TEST_AT }
+  const recovered = await recoverLocalDeliveryEffects(store.deps, 7)
+  assert.equal(recovered.body.pendingEffects?.length, 2)
+  assert.equal([...store.completed()].filter((effect) => effect.startsWith("delivered_")).length, 1, "un solo efecto completado antes de la clasificación")
+  assert.deepEqual(store.emails, [])
+  // Corridas siguientes: nada más.
+  const rowsBefore = store.rows.length
+  assert.equal((await recoverLocalDeliveryEffects(store.deps, 7)).status, 409)
+  assert.equal(store.rows.length, rowsBefore)
+})
+
+test("clasificada después de reservar el email: la autorización en base la rechaza y el email no sale", async () => {
+  const store = localDeliveryStore({ estado: "en_camino" })
+  store.failures.email = 1
+  await advanceLocalDelivery(store.deps, 7, "entregado")
+  store.emails.length = 0
+  store.hooks.onReserve = () => { store.order.test_order_at = TEST_AT }
+  const recovered = await recoverLocalDeliveryEffects(store.deps, 7)
+  assert.deepEqual(recovered.body.pendingEffects, ["delivered_email"])
+  assert.deepEqual(store.emails, [])
+  // La base tampoco acepta la marca `failed` de una prueba: la reserva queda sin cierre (nunca cuenta como enviado).
+  assert.deepEqual(store.rowsOf("delivered_email").slice(-1), ["reserved"])
+})
+
+test("clasificada entre la relectura y la escritura de la marca: la base la rechaza; queda pendiente, sin marca ni email", async () => {
+  const store = await deliveredWithAllEffectsPending()
+  const rowsBefore = store.rows.length
+  // La relectura vio un pedido real; la clasificación se confirma justo antes del INSERT.
+  store.hooks.beforeRecordEffect = () => { store.order.test_order_at = TEST_AT }
+  const recovered = await recoverLocalDeliveryEffects(store.deps, 7)
+  assert.equal(recovered.status, 200)
+  assert.ok((recovered.body.pendingEffects ?? []).length > 0)
+  assert.equal(store.rows.length, rowsBefore, "ninguna marca nueva")
+  assert.deepEqual(store.emails, [])
+  // Siguiente corrida del cron: ni lo intenta.
+  assert.equal((await recoverLocalDeliveryEffects(store.deps, 7)).status, 409)
+  assert.equal(store.rows.length, rowsBefore)
+})
+
+test("compra de prueba: ninguna transición de entrega (Despachos ni cadete) y el UPDATE condicional tampoco la acepta", async () => {
+  const store = localDeliveryStore({ estado: "pagado", test_order_at: TEST_AT })
+  const result = await advanceLocalDelivery(store.deps, 7, "en_camino")
+  assert.equal(result.status, 409)
+  assert.match(result.body.error ?? "", /Compra de prueba/)
+  assert.equal(store.order.estado, "pagado")
+  assert.equal(store.rows.length, 0)
 })
 
 test("automático: nunca avanza un pedido (sólo completa efectos de la etapa real)", async () => {
