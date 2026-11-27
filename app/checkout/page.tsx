@@ -163,9 +163,6 @@ import {
   parseDeliveryAddress,
 } from "@/lib/delivery-address"
 import {
-  hasBlockedWords,
-} from "@/lib/validation/content-filter"
-import {
   ARGENTINA_PROVINCES,
   FIELD_LIMITS,
   normalizeArgentineLocality,
@@ -2062,11 +2059,6 @@ export default function CheckoutPage() {
     if (!isFormValid || !selectedShippingOption || !isSelectedPaymentValid) return
     if (!termsAccepted) return
     if (pricingConflictBlocksPayment) return
-
-    if (hasBlockedWords(formData.direccion)) {
-      setCheckoutError("La dirección contiene texto no permitido.")
-      return
-    }
 
     if (!customerCreditCoversTotal && selectedPayment === "mercadopago") {
       setMercadoPagoConfirmOpen(true)

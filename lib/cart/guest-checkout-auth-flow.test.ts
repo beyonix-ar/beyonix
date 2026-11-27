@@ -127,3 +127,20 @@ test("J. redirect externo o inválido: se descarta y nunca sale de BEYONIX", () 
   }
   assert.equal(buildLoginHref(null, { "verificar-email": "ana@example.com" }), "/login?verificar-email=ana%40example.com")
 })
+
+test("K. pantalla de confirmación recargada (navegador integrado de Instagram/Facebook): sin handoff no promete inicio automático, ofrece iniciar sesión y no queda trabada", () => {
+  // La decisión vive en lib/auth/confirmation-wait.ts (probada aparte); acá, que /login la use.
+  const redirectEffect = between(login, "useEffect(() => {\n    if (\n      !shouldLeaveLoginWithSession({", "  if (isLoading) {")
+  assert.match(redirectEffect, /confirmationEmail,\n\s+confirmationHandoff,\n\s+\}\)/)
+  assert.match(redirectEffect, /beginAuthenticatedRedirect\(\)/)
+  assert.match(login, /const confirmationWaitMode = getConfirmationWaitMode\(confirmationHandoff\)/)
+  assert.match(login, /confirmationWaitMode === "automatic"\n\s+\? `Dejá esta pestaña abierta\./)
+  assert.match(login, /: "Cuando confirmes el correo, volvé a esta pantalla e iniciá sesión para continuar\."/)
+  assert.match(login, /"Ya confirmé, iniciar sesión"/)
+  // Al volver al formulario conserva el email y el regreso al checkout.
+  assert.match(login, /setIdentifier\(\(current\) => current \|\| confirmationEmail\)/)
+  assert.match(login, /router\.replace\(buildLoginHref\(redirect\), \{ scroll: false \}\)/)
+  // Ya no anuncia "el Home" cuando vuelve al checkout.
+  assert.doesNotMatch(login, /te llevaremos al Home automáticamente/)
+  assert.doesNotMatch(login, /te llevaremos al\n\s+inicio\./)
+})

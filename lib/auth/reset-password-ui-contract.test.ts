@@ -274,7 +274,11 @@ test("el botón 'Reenviar correo de confirmación' tiene borde/fondo visibles en
 test("'Volver al inicio de sesión' (tarjeta de confirmación pendiente) es una acción secundaria (texto/underline), no un segundo botón sólido compitiendo con 'Reenviar correo'", () => {
   const login = source("app/login/page.tsx")
 
-  const linkIndex = login.indexOf('aria-label="Volver al inicio de sesión"')
+  // La etiqueta cambia a "Ya confirmé, iniciar sesión" cuando la pestaña no
+  // puede iniciar sesión sola (ver lib/auth/confirmation-wait.ts); el botón es
+  // el mismo y sigue siendo secundario.
+  assert.match(login, /\? "Ya confirmé, iniciar sesión"\s+: "Volver al inicio de sesión"/)
+  const linkIndex = login.indexOf("aria-label={confirmationExitLabel}")
   assert.ok(linkIndex >= 0)
   const linkBlock = login.slice(linkIndex, linkIndex + 1100)
 

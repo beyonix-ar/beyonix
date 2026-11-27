@@ -29,6 +29,11 @@ import { GeographicSelect } from "@/components/checkout/geographic-select"
 import { useAuth } from "@/context/auth-context"
 import { useBackNavigation } from "@/hooks/use-back-navigation"
 import { useTerritorialSelector } from "@/hooks/use-territorial-selector"
+import {
+  getConfirmationDestinationLabel,
+  getConfirmationWaitMode,
+  shouldLeaveLoginWithSession,
+} from "@/lib/auth/confirmation-wait"
 import { buildLoginHref, getSafeRedirect } from "@/lib/auth/safe-redirect"
 import { supabase } from "@/lib/supabase/client"
 import {
@@ -264,6 +269,13 @@ function LoginContent() {
     redirect === "/"
       ? "/recuperar-contrasena"
       : `/recuperar-contrasena?${new URLSearchParams({ redirect })}`
+  const confirmationDestination = getConfirmationDestinationLabel(redirect)
+  const confirmationWaitMode = getConfirmationWaitMode(confirmationHandoff)
+  // Sin inicio automático, esta es la forma de seguir: se nombra como tal.
+  const confirmationExitLabel =
+    confirmationWaitMode === "manual" && !confirmationValidated
+      ? "Ya confirmé, iniciar sesión"
+      : "Volver al inicio de sesión"
   const verificationEmail = searchParams.get("verificar-email")
   const requestedMode = searchParams.get("mode")
   const confirmationPollInProgress = useRef(false)
@@ -495,11 +507,21 @@ function LoginContent() {
   ])
 
   useEffect(() => {
-    if (isLoading || !user || confirmationEmail) return
+    if (
+      !shouldLeaveLoginWithSession({
+        isLoading,
+        hasUser: Boolean(user),
+        confirmationEmail,
+        confirmationHandoff,
+      })
+    ) {
+      return
+    }
     beginAuthenticatedRedirect()
   }, [
     beginAuthenticatedRedirect,
     confirmationEmail,
+    confirmationHandoff,
     isLoading,
     user,
   ])
@@ -829,7 +851,7 @@ function LoginContent() {
 
             <p className="mt-3 text-sm leading-6 text-white/68">
               {confirmationValidated
-                ? "Estamos iniciando tu sesión y te llevaremos al Home automáticamente."
+                ? `Estamos iniciando tu sesión y te llevaremos ${confirmationDestination} automáticamente.`
                 : "Te enviamos un correo de confirmación. Revisá tu email para activar la cuenta."}
             </p>
 
@@ -845,9 +867,9 @@ function LoginContent() {
                 </p>
 
                 <p className="mt-3 text-xs leading-5 font-medium text-[var(--account-success-text)]">
-                  Dejá esta pestaña abierta. Cuando confirmes el correo,
-                  iniciaremos tu sesión automáticamente y te llevaremos al
-                  inicio.
+                  {confirmationWaitMode === "automatic"
+                    ? `Dejá esta pestaña abierta. Cuando confirmes el correo, iniciaremos tu sesión automáticamente y te llevaremos ${confirmationDestination}.`
+                    : "Cuando confirmes el correo, volvé a esta pantalla e iniciá sesión para continuar."}
                 </p>
 
                 <p className="mt-3 text-xs leading-5 text-white/42">
@@ -890,9 +912,10 @@ function LoginContent() {
 
             <button
               type="button"
-              aria-label="Volver al inicio de sesión"
+              aria-label={confirmationExitLabel}
               disabled={finishingConfirmation}
               onClick={() => {
+                setIdentifier((current) => current || confirmationEmail)
                 setConfirmationEmail("")
                 setConfirmationUserId("")
                 setConfirmationHandoff("")
@@ -904,7 +927,7 @@ function LoginContent() {
               }}
               className="mt-3 flex h-11 w-full cursor-pointer items-center justify-center rounded-xl text-sm font-semibold text-[var(--account-text-secondary)] underline decoration-2 decoration-transparent underline-offset-4 transition-colors duration-200 hover:text-[var(--account-accent)] hover:decoration-[var(--account-accent)] active:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Volver al inicio de sesión
+              {confirmationExitLabel}
             </button>
           </div>
         ) : (

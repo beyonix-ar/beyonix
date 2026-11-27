@@ -59,12 +59,11 @@ function normalizeForModeration(value: string) {
     .replace(/[^a-z]/g, "")
 }
 
-export function hasBlockedWords(value: string) {
-  const compact = normalizeForModeration(value)
-
-  return blockedRoots.some((word) => compact.includes(word))
-}
-
+// El usuario es un identificador privado de acceso (lo ven el cliente y el
+// admin; las reseñas nunca lo muestran, ver lib/reviews/public-name.ts), así
+// que no pasa por la moderación de contenido: igual que nombre, email y
+// domicilio, suele derivarse del nombre real ("mariano.ortiz") y la búsqueda
+// de raíces por substring rechazaba identidades legítimas.
 export function validateUsername(username: string) {
   const cleanUsername = username.trim()
 
@@ -78,10 +77,6 @@ export function validateUsername(username: string) {
 
   if (!/^[\p{L}\p{M}0-9._-]+$/u.test(cleanUsername)) {
     return "Usá solo letras, números, punto, guion o guion bajo."
-  }
-
-  if (hasBlockedWords(cleanUsername)) {
-    return "Ese nombre de usuario no está permitido."
   }
 
   return ""

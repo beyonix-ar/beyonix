@@ -453,3 +453,15 @@ test("/confirmar-email es la única ruta que consume el token_hash/code de Confi
     "{{ .SiteURL }}/confirmar-email?token_hash={{ .TokenHash }}&type=email",
   ])
 })
+
+test("enlace abierto en otro navegador (app de correo): el éxito explica cómo seguir la compra y ofrece salida aunque el navegador no deje cerrar la pestaña", () => {
+  const page = source("app/confirmar-email/page.tsx").replace(/\r\n/g, "\n")
+  const confirmedBlock = page.slice(page.indexOf(") : confirmed ? ("), page.indexOf(") : confirming ? ("))
+  assert.match(confirmedBlock, /Volvé a la pestaña o a la app donde creaste tu cuenta \(por\n\s+ejemplo, Instagram\) para seguir con tu compra\./)
+  assert.match(confirmedBlock, /onClick=\{handleCloseClick\}/)
+  assert.match(confirmedBlock, /\{closeBlocked && \(/)
+  assert.match(confirmedBlock, /<Link href="\/" className=\{secondaryLinkClassName\}>\n\s+Seguir en este navegador/)
+  // No promete pasar el carrito entre navegadores.
+  assert.match(confirmedBlock, /Si armaste el carrito en otra app, sus productos no se pasan a\n\s+este navegador\./)
+  assert.match(page, /window\.close\(\)\n\s+window\.setTimeout\(\(\) => \{\n\s+if \(mountedRef\.current\) setCloseBlocked\(true\)/)
+})

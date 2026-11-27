@@ -84,6 +84,16 @@ function ConfirmEmailContent() {
   const [confirming, setConfirming] = useState(false)
   const [error, setError] = useState("")
   const [confirmed, setConfirmed] = useState(false)
+  // window.close() sólo funciona en pestañas que el navegador considera
+  // cerrables por script; en las que abre una app de correo suele ignorarse.
+  const [closeBlocked, setCloseBlocked] = useState(false)
+
+  const handleCloseClick = useCallback(() => {
+    window.close()
+    window.setTimeout(() => {
+      if (mountedRef.current) setCloseBlocked(true)
+    }, 400)
+  }, [])
 
   useEffect(() => {
     if (!confirmed) return
@@ -219,6 +229,9 @@ function ConfirmEmailContent() {
   const primaryButtonClassName =
     "beyonix-confirm-primary-button mt-5 flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-white text-sm font-semibold text-black transition-colors duration-200 hover:opacity-90 active:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/50 disabled:cursor-not-allowed disabled:opacity-60"
 
+  const secondaryLinkClassName =
+    "mt-3 flex h-11 w-full items-center justify-center rounded-xl text-sm font-semibold text-[var(--account-text-secondary)] underline decoration-2 decoration-transparent underline-offset-4 transition-colors duration-200 hover:text-[var(--account-accent)] hover:decoration-[var(--account-accent)] active:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25"
+
   return (
     <div className="confirmar-email-scope flex min-h-screen flex-col bg-[var(--account-background)]">
       <header className="border-b border-[var(--account-border)] bg-[var(--account-background)]">
@@ -276,14 +289,34 @@ function ConfirmEmailContent() {
               <p className="mt-3 text-sm leading-6 text-[var(--account-text-secondary)]">
                 Tu cuenta fue confirmada correctamente.
               </p>
+              <p className="mt-2 text-sm leading-6 text-[var(--account-text-secondary)]">
+                Volvé a la pestaña o a la app donde creaste tu cuenta (por
+                ejemplo, Instagram) para seguir con tu compra.
+              </p>
 
               <button
                 type="button"
-                onClick={() => window.close()}
+                onClick={handleCloseClick}
                 className={primaryButtonClassName}
               >
                 Cerrar esta pestaña
               </button>
+              {closeBlocked && (
+                <p
+                  role="status"
+                  className="mt-3 text-xs leading-5 text-[var(--account-text-secondary)]"
+                >
+                  Este navegador no permite cerrarla desde acá. Podés cerrarla
+                  a mano y volver a la app donde empezaste.
+                </p>
+              )}
+              <Link href="/" className={secondaryLinkClassName}>
+                Seguir en este navegador
+              </Link>
+              <p className="mt-1 text-xs leading-5 text-[var(--account-text-secondary)]">
+                Si armaste el carrito en otra app, sus productos no se pasan a
+                este navegador.
+              </p>
             </>
           ) : confirming ? (
             <p className="mt-3 text-sm leading-6 text-[var(--account-text-secondary)]">

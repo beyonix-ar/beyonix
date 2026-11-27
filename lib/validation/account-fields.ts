@@ -1,4 +1,4 @@
-import { hasBlockedWords, validateUsername } from "./content-filter.ts"
+import { validateUsername } from "./content-filter.ts"
 import { isValidArgentineNationalPhone } from "./phone-ar.ts"
 
 export const ARGENTINA_PROVINCES = [
@@ -147,10 +147,6 @@ function validateCleanText(
     return `${label} no puede superar los ${maxLength} caracteres.`
   }
 
-  if (hasBlockedWords(trimmed)) {
-    return `${label} contiene texto no permitido.`
-  }
-
   if (options?.pattern && !options.pattern.test(trimmed)) {
     return options.allowedHint ?? `${label} contiene caracteres no permitidos.`
   }
@@ -188,10 +184,6 @@ export function validateEmail(email: string) {
 
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
     return "Ingresá un email válido."
-  }
-
-  if (hasBlockedWords(trimmed)) {
-    return "El email contiene texto no permitido."
   }
 
   return ""
