@@ -38,6 +38,7 @@ import {
 import {
   FIELD_LIMITS,
   meetsPasswordRequirements,
+  validatePassword,
   onlyDigits,
   validateProfilePayload,
 } from "@/lib/validation/account-fields"
@@ -84,8 +85,9 @@ function ChangePasswordForm() {
       setError("")
       setSuccess("")
 
-      if (!meetsPasswordRequirements(newPassword)) {
-        setError("La contraseña no cumple los requisitos.")
+      const passwordError = validatePassword(newPassword)
+      if (passwordError) {
+        setError(passwordError)
         return
       }
 
@@ -177,7 +179,6 @@ function ChangePasswordForm() {
           onChange={setNewPassword}
           placeholder="Mínimo 8 caracteres"
           icon={Lock}
-          maxLength={FIELD_LIMITS.password}
           rightElement={
             <button
               type="button"
@@ -199,7 +200,6 @@ function ChangePasswordForm() {
         onChange={setConfirmPassword}
         placeholder="Repetí la nueva contraseña"
         icon={Lock}
-        maxLength={FIELD_LIMITS.password}
         error={passwordsMismatch ? "Las contraseñas no coinciden." : undefined}
         success={passwordsMatch}
         rightElement={

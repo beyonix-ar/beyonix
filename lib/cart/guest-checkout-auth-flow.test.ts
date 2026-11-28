@@ -67,12 +67,12 @@ test("B. login exitoso: vuelve al destino seguro del ?redirect= (el checkout)", 
   assert.match(login, /const redirect = getSafeRedirect\(searchParams\.get\("redirect"\)\)/)
   const begin = between(login, "const beginAuthenticatedRedirect = useCallback(() => {", "}, [redirect, router])")
   assert.match(begin, /router\.replace\(redirect\)/)
-  const loginBranch = between(login, 'if (mode === "login") {', "if (!meetsPasswordRequirements(password))")
+  const loginBranch = between(login, 'if (mode === "login") {', "const passwordError = validatePassword(password)")
   assert.match(loginBranch, /beginAuthenticatedRedirect\(\)/)
 })
 
 test("E. login fallido: muestra el error, no navega (redirect intacto) y no toca el carrito", () => {
-  const loginBranch = between(login, 'if (mode === "login") {', "if (!meetsPasswordRequirements(password))")
+  const loginBranch = between(login, 'if (mode === "login") {', "const passwordError = validatePassword(password)")
   const failure = between(loginBranch, "if (!result.ok) {", "navigationStarted.current = false\n      beginAuthenticatedRedirect()")
   assert.match(failure, /setError\(result\.error \|\| "Error al iniciar sesión"\)/)
   assert.doesNotMatch(failure, /router\.|window\.location|history\./)

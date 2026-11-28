@@ -125,6 +125,7 @@ const TEST_FILES = [
   "lib/auth/confirmation-wait.test.ts",
   "lib/auth/reset-password-submit.test.ts",
   "lib/auth/login.test.ts",
+  "lib/auth/password-fields-no-truncation-contract.test.ts",
   "lib/auth/trusted-client-ip.test.ts",
   "lib/supabase/cookie-options.test.ts",
   "lib/auth/safe-redirect.test.ts",

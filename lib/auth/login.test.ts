@@ -248,3 +248,61 @@ test("el email resuelto de un username nunca aparece en el resultado devuelto", 
 
   assert.doesNotMatch(JSON.stringify(result), /antares-secreto/)
 })
+
+// Hotfix de contraseñas: el backend nunca modifica la contraseña ni aplica
+// las reglas de creación. Todas las contraseñas son ficticias.
+const EXACT_PASSWORDS = [
+  "Ficticia-2026-Clave1",
+  "Ficticia-2026-Clave12",
+  "Ficticia-2026-Clave12345",
+  "q7#Vt9!xR2$wLm8@Zp4^Hs6&Ky1*Nb3(Jd5)Fg0_Uc2+Ea7=Wr9{Ti4}Ol6|Ms8?",
+  "  clave con espacios  ",
+  "Ñandú-café-密码-🔐",
+  "abc",
+]
+
+test("login: la contraseña llega a signInWithPassword exactamente igual (largo, espacios, Unicode sin normalizar, antiguas)", async () => {
+  for (const password of EXACT_PASSWORDS) {
+    const { admin, calls } = createFakeAdmin({ passwords: { "cliente@example.com": { ok: true } } })
+    const result = await signInWithIdentifier({ admin, identifierRaw: "cliente@example.com", passwordRaw: password })
+    assert.equal(result.ok, true, password)
+    assert.equal(calls.signInWithPassword.length, 1)
+    assert.equal(calls.signInWithPassword[0].password, password)
+    assert.equal(Buffer.compare(Buffer.from(calls.signInWithPassword[0].password), Buffer.from(password)), 0, "mismos bytes")
+  }
+})
+
+test("login: el cuerpo HTTP que supabase-js envía a Supabase Auth contiene la contraseña íntegra", async () => {
+  const { createClient } = await import("@supabase/supabase-js")
+  const originalFetch = globalThis.fetch
+  const bodies: Array<{ email: string; password: string }> = []
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input instanceof Request ? input.url : input))
+    if (url.pathname === "/auth/v1/token") {
+      assert.equal(url.searchParams.get("grant_type"), "password")
+      bodies.push(JSON.parse(String(init?.body)))
+      return Response.json({ error: "invalid_grant", error_description: "Invalid login credentials" }, { status: 400 })
+    }
+    if (url.pathname === "/rest/v1/rpc/is_client_registration_blocked") return Response.json(false)
+    throw new Error(`petición inesperada: ${url.pathname}`)
+  }) as typeof fetch
+  try {
+    const admin = createClient("https://auth-intercept.invalid", "test-service-key", { auth: { persistSession: false, autoRefreshToken: false } })
+    for (const password of EXACT_PASSWORDS) {
+      const result = await signInWithIdentifier({ admin: admin as never, identifierRaw: "cliente@example.com", passwordRaw: password })
+      assert.equal(result.ok, false)
+      assert.equal(bodies.at(-1)?.password, password)
+      assert.equal(bodies.at(-1)?.email, "cliente@example.com")
+    }
+    assert.equal(bodies.length, EXACT_PASSWORDS.length)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test("login: una contraseña antigua que no cumple las reglas actuales no se rechaza antes de Supabase", async () => {
+  const { admin, calls } = createFakeAdmin({ passwords: { "cliente@example.com": { ok: true } } })
+  const result = await signInWithIdentifier({ admin, identifierRaw: "cliente@example.com", passwordRaw: "sinmayus" })
+  assert.equal(result.ok, true)
+  assert.equal(calls.signInWithPassword[0].password, "sinmayus")
+})

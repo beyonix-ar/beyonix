@@ -64,7 +64,6 @@ export function LoginForm({ onSwitch }: { onSwitch: () => void }) {
         onChange={setPassword}
         placeholder="••••••••"
         icon={Lock}
-        maxLength={FIELD_LIMITS.password}
         rightElement={
           <button
             type="button"
@@ -408,7 +407,6 @@ export function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
         onChange={setPassword}
         placeholder="Creá una contraseña segura"
         icon={Lock}
-        maxLength={FIELD_LIMITS.password}
         rightElement={
           <button
             type="button"

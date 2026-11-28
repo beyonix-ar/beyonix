@@ -30,7 +30,7 @@ import {
   type PasswordUpdateSubmitter,
 } from "@/lib/auth/reset-password-submit"
 import { supabase } from "@/lib/supabase/client"
-import { FIELD_LIMITS, validatePassword } from "@/lib/validation/account-fields"
+import { validatePassword } from "@/lib/validation/account-fields"
 
 const PASSWORD_RECOVERY_KEY = "beyonix-password-recovery"
 
@@ -346,7 +346,6 @@ function ResetPasswordContent() {
                           aria-label="Contraseña nueva"
                           required
                           value={password}
-                          maxLength={FIELD_LIMITS.password}
                           autoComplete="new-password"
                           onChange={(e) => setPassword(e.target.value)}
                           className="h-11 w-full rounded-xl border border-[var(--account-border)] bg-[var(--account-input)] px-3.5 pr-11 text-sm text-[var(--account-text-primary)] outline-none transition-all placeholder:text-[var(--account-text-placeholder)] hover:border-beyonix-blue-light/45 focus:border-beyonix-sky/70 focus:ring-2 focus:ring-beyonix-blue-light/24"
@@ -384,7 +383,6 @@ function ResetPasswordContent() {
                           aria-label="Repetir contraseña"
                           required
                           value={confirmPassword}
-                          maxLength={FIELD_LIMITS.password}
                           autoComplete="new-password"
                           onChange={(e) => setConfirmPassword(e.target.value)}
                           className="h-11 w-full rounded-xl border border-[var(--account-border)] bg-[var(--account-input)] px-3.5 pr-11 text-sm text-[var(--account-text-primary)] outline-none transition-all placeholder:text-[var(--account-text-placeholder)] hover:border-beyonix-blue-light/45 focus:border-beyonix-sky/70 focus:ring-2 focus:ring-beyonix-blue-light/24"

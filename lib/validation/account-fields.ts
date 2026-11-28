@@ -40,7 +40,6 @@ export const FIELD_LIMITS = {
   postalCode: 8,
   phone: 15,
   dni: 8,
-  password: 20,
   loginIdentifier: 120,
   references: 80,
 }
@@ -189,11 +188,35 @@ export function validateEmail(email: string) {
   return ""
 }
 
+/**
+ * Política de contraseñas. Las reglas de CREACIÓN (largo mínimo, mayúscula,
+ * minúscula y número) se aplican sólo al establecer una contraseña nueva
+ * (registro, recuperación y cambio). El inicio de sesión nunca las aplica ni
+ * limita el largo: la contraseña se envía tal cual a Supabase Auth, así una
+ * contraseña antigua que no cumple las reglas actuales sigue funcionando.
+ *
+ * Los campos de contraseña no usan `maxLength`: el navegador recorta en
+ * silencio lo tipeado, pegado o autocompletado. Un exceso se informa con un
+ * mensaje, nunca se trunca.
+ */
+export const PASSWORD_MIN_LENGTH = 8
+
+/**
+ * Máximo técnico real para contraseñas NUEVAS: Supabase Auth las guarda con
+ * bcrypt, que sólo admite 72 bytes (UTF-8). Antes el límite era un arbitrario
+ * 20 caracteres que impedía usar las contraseñas de los gestores.
+ */
+export const PASSWORD_MAX_BYTES = 72
+
+export function getPasswordByteLength(password: string) {
+  return new TextEncoder().encode(password).length
+}
+
 export function getPasswordRequirements(password: string) {
   return [
     {
-      label: "Mínimo 8 caracteres",
-      met: password.length >= 8,
+      label: `Mínimo ${PASSWORD_MIN_LENGTH} caracteres`,
+      met: password.length >= PASSWORD_MIN_LENGTH,
     },
     {
       label: "Una letra mayúscula",
@@ -207,23 +230,25 @@ export function getPasswordRequirements(password: string) {
       label: "Un número",
       met: /[0-9]/.test(password),
     },
+    // Sólo aparece cuando se excede: el caso normal no cambia.
+    ...(getPasswordByteLength(password) > PASSWORD_MAX_BYTES
+      ? [{ label: `Hasta ${PASSWORD_MAX_BYTES} caracteres`, met: false }]
+      : []),
   ]
 }
 
 export function meetsPasswordRequirements(password: string) {
-  return (
-    password.length <= FIELD_LIMITS.password &&
-    getPasswordRequirements(password).every((requirement) => requirement.met)
-  )
+  return getPasswordRequirements(password).every((requirement) => requirement.met)
 }
 
+/** Sólo para contraseñas NUEVAS. Nunca usar en el inicio de sesión. */
 export function validatePassword(password: string) {
-  if (password.length < 8) {
-    return "La contraseña debe tener al menos 8 caracteres."
+  if (password.length < PASSWORD_MIN_LENGTH) {
+    return `La contraseña debe tener al menos ${PASSWORD_MIN_LENGTH} caracteres.`
   }
 
-  if (password.length > FIELD_LIMITS.password) {
-    return "La contraseña no puede superar los 20 caracteres."
+  if (getPasswordByteLength(password) > PASSWORD_MAX_BYTES) {
+    return `La contraseña es demasiado larga: admite hasta ${PASSWORD_MAX_BYTES} caracteres (las letras con tilde, la ñ y los emojis ocupan más de uno).`
   }
 
   if (!/\p{Lu}/u.test(password)) {

@@ -38,9 +38,9 @@ import { buildLoginHref, getSafeRedirect } from "@/lib/auth/safe-redirect"
 import { supabase } from "@/lib/supabase/client"
 import {
   FIELD_LIMITS,
-  meetsPasswordRequirements,
   onlyDigits,
   validateNamePart,
+  validatePassword,
   validateRegisterPayload,
 } from "@/lib/validation/account-fields"
 import { formatDeliveryAddress } from "@/lib/delivery-address"
@@ -358,13 +358,28 @@ function LoginContent() {
     setSuccess("")
   }, [verificationEmail])
 
+  const lastRequestedMode = useRef<string | null>(null)
   useEffect(() => {
     if (verificationEmail) return
-    if (requestedMode !== "register") return
+    const previousRequestedMode = lastRequestedMode.current
+    lastRequestedMode.current = requestedMode
 
-    setMode("register")
-    setError("")
-    setSuccess("")
+    if (requestedMode === "register") {
+      setMode("register")
+      setError("")
+      setSuccess("")
+      return
+    }
+
+    // La URL dejó de pedir el registro sin desmontar la página (p. ej.
+    // "atrás" de /login?mode=register a /login): vuelve el inicio de sesión.
+    // Antes el formulario quedaba en registro, con sus reglas de creación de
+    // contraseña, aunque la persona quisiera ingresar.
+    if (previousRequestedMode === "register") {
+      setMode("login")
+      setError("")
+      setSuccess("")
+    }
   }, [requestedMode, verificationEmail])
 
   useEffect(() => {
@@ -646,9 +661,10 @@ function LoginContent() {
       return
     }
 
-    if (!meetsPasswordRequirements(password)) {
+    const passwordError = validatePassword(password)
+    if (passwordError) {
       setLoading(false)
-      setError("La contraseña no cumple los requisitos.")
+      setError(passwordError)
       return
     }
 
@@ -1114,7 +1130,6 @@ function LoginContent() {
                       value={password}
                       onChange={setPassword}
                       placeholder="Creá una contraseña segura"
-                      maxLength={FIELD_LIMITS.password}
                       autoComplete="new-password"
                       showPasswordToggle
                       onFocus={() => setPasswordFocused(true)}
@@ -1126,7 +1141,7 @@ function LoginContent() {
                       </div>
                     )}
                   </div>
-                  <Field name="confirm-password" label="Confirmar contraseña*" type="password" value={confirmPassword} onChange={setConfirmPassword} placeholder="Repetí la contraseña" maxLength={FIELD_LIMITS.password} autoComplete="new-password" showPasswordToggle />
+                  <Field name="confirm-password" label="Confirmar contraseña*" type="password" value={confirmPassword} onChange={setConfirmPassword} placeholder="Repetí la contraseña" autoComplete="new-password" showPasswordToggle />
                 </div>
               </fieldset>
 
@@ -1340,7 +1355,7 @@ function LoginContent() {
           {mode === "login" && (
             <>
               <Field name="username" label="Email o usuario" type="text" value={identifier} onChange={setIdentifier} placeholder="usuario.tech o nombre@email.com" maxLength={FIELD_LIMITS.loginIdentifier} autoComplete="username" />
-              <Field name="password" label="Contraseña" type="password" value={password} onChange={setPassword} placeholder="Contraseña" maxLength={FIELD_LIMITS.password} autoComplete="current-password" showPasswordToggle />
+              <Field name="password" label="Contraseña" type="password" value={password} onChange={setPassword} placeholder="Contraseña" autoComplete="current-password" showPasswordToggle />
             </>
           )}
 
